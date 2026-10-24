@@ -48,6 +48,10 @@ adopted_edition <- function(adoption, year, lab = NA) {
 # `data` has one row per isolate and drug, with columns `year`, `mo` (organism), `ab` (drug) and
 # a raw value in `mic` (e.g. "<=0.25") or `disk` (zone diameter in mm), or both columns with one
 # filled per row. Deduplicate first, e.g. with AMR::first_isolate().
+# An optional `reported` column holds the S/I/R each isolate was originally reported with. The
+# observed change is then the change in reported %R, as the published antibiograms showed it,
+# and the artefact is everything in it that the MICs do not explain, including a lab's own
+# reporting rules.
 # `from` and `to` are a year each or a range such as 2013:2016. A period is read with the edition
 # in force at its last year, as a cumulative antibiogram for that period would have been.
 #
@@ -124,9 +128,16 @@ drift_decompose <- function(data, from = min(data$year), to = max(data$year),
       out[[paste0("r_", cell)]] <- r
       out[[paste0("p_", cell)]] <- ifelse(n > 0, r / n, NA_real_)
     }
+    if (!is.null(x$reported)) {
+      n <- sum_by_pair(x$reported %in% c("S", "SDD", "I", "R"))
+      r <- sum_by_pair(x$reported %in% "R")
+      out[[paste0("n_rep_y", y)]] <- n
+      out[[paste0("r_rep_y", y)]] <- r
+      out[[paste0("p_rep_y", y)]] <- ifelse(n > 0, r / n, NA_real_)
+    }
   }
 
-  out$observed <- out$p_y2g2 - out$p_y1g1
+  out$observed <- if (is.null(data$reported)) out$p_y2g2 - out$p_y1g1 else out$p_rep_y2 - out$p_rep_y1
   out$real_at_new <- out$p_y2g2 - out$p_y1g2
   out$real_at_old <- out$p_y2g1 - out$p_y1g1
   out$real <- (out$real_at_new + out$real_at_old) / 2
@@ -135,17 +146,29 @@ drift_decompose <- function(data, from = min(data$year), to = max(data$year),
 }
 
 # S/I/R/NI as text for each row, from its MIC or zone diameter
+#
+# Where a guideline has no breakpoint for an organism's own group, AMR::as.sir() falls back to a
+# broader one. For Enterobacterales that broader one is the generic Gram-negative row (CLSI
+# Table 2B-5, "other non-Enterobacterales"), which is wrong for them: in AMR 3.1.0, CLSI 2011-2019
+# lack Enterobacterales rows for many drugs, and E. coli ceftriaxone would be read with S <= 8
+# instead of S <= 1. Such readings are dropped (NA), so they count as not readable.
 read_sir <- function(x, guideline) {
   sir <- rep(NA_character_, nrow(x))
   for (method in c("MIC", "disk")) {
-    i <- x$method == method
-    if (!any(i)) next
+    i <- which(x$method == method)
+    if (length(i) == 0) next
+    invisible(AMR::sir_interpretation_history(clean = TRUE))
     sir[i] <- as.character(if (method == "MIC") {
       AMR::as.sir(AMR::as.mic(x$mic[i]), mo = x$mo[i], ab = x$ab[i], guideline = guideline,
                   capped_mic_handling = "standard", info = FALSE)
     } else {
       AMR::as.sir(AMR::as.disk(x$disk[i]), mo = x$mo[i], ab = x$ab[i], guideline = guideline, info = FALSE)
     })
+    log <- AMR::sir_interpretation_history(clean = TRUE)
+    generic <- log$index[as.character(log$mo) %in% c("B_GRAMN", "B_GRAMP")]
+    mos <- unique(x$mo[i])
+    enterobacterales <- mos[AMR::mo_order(mos, info = FALSE) %in% "Enterobacterales"]
+    sir[i[generic[x$mo[i][generic] %in% enterobacterales]]] <- NA
   }
   sir
 }
@@ -164,7 +187,11 @@ drift_test <- function(x, alpha = 0.05) {
     if (n1 == 0 || n2 == 0) return(NA_real_)
     stats::fisher.test(matrix(c(r1, n1 - r1, r2, n2 - r2), 2))$p.value
   }, r1, n1, r2, n2)
-  x$p_observed <- stats::p.adjust(fisher(x$r_y1g1, x$n_y1g1, x$r_y2g2, x$n_y2g2), "BH")
+  x$p_observed <- stats::p.adjust(if (is.null(x$r_rep_y1)) {
+    fisher(x$r_y1g1, x$n_y1g1, x$r_y2g2, x$n_y2g2)
+  } else {
+    fisher(x$r_rep_y1, x$n_rep_y1, x$r_rep_y2, x$n_rep_y2)
+  }, "BH")
   x$p_real <- stats::p.adjust(fisher(x$r_y1g2, x$n_y1g2, x$r_y2g2, x$n_y2g2), "BH")
 
   for (cell in c("y1g2", "y2g2")) {
@@ -191,6 +218,8 @@ drift_test <- function(x, alpha = 0.05) {
 # up below one, before %R moves. p-values are Benjamini-Hochberg corrected across pairs.
 # A period whose values are nearly all capped ("<=1" and nothing else) has no estimable mean, so
 # each period needs `min_n` values, of which `min_exact` are not capped; otherwise the shift is NA.
+# It is also NA when either period's fitted geometric mean lies outside the range the panel
+# tested: mostly capped values let the fit run below or above any tested dilution.
 # ponytail: one normal per period. A wild-type / non-wild-type mixture (PLOS ONE 2019,
 # doi:10.1371/journal.pone.0220427) fits bimodal populations better; upgrade if a resistant
 # subpopulation shifting on its own matters.
@@ -238,6 +267,9 @@ fit_shift <- function(x, min_n, min_exact) {
   b <- stats::coef(fit)
   se <- sqrt(stats::vcov(fit)["lateTRUE", "lateTRUE"])
   if (!is.finite(se)) return(res)
+  tested <- range(c(x$lo, x$hi), na.rm = TRUE)
+  means <- c(b[[1]], b[[1]] + b[[2]])
+  if (any(means < tested[1] | means > tested[2])) return(res)
   res$gm_from <- 2^b[[1]]
   res$gm_to <- 2^(b[[1]] + b[[2]])
   res$shift <- b[[2]]
@@ -268,7 +300,8 @@ drift_report <- function(x, path, title = "Breakpoint drift report", note = NULL
             y2, paste(editions$guideline_to, collapse = " or ")),
     if (!is.null(note)) c("", note),
     "",
-    "- **Observed**: %R in each period under its own guideline, as an antibiogram reports it.",
+    if (is.null(x$p_rep_y1)) "- **Observed**: %R in each period under its own guideline, as an antibiogram reports it."
+    else "- **Observed**: %R as originally reported in each period.",
     "- **Real**: change in the values, with the guideline held fixed (mean of holding either one).",
     "- **Artefact**: the rest of the observed change, caused by the breakpoint revision alone.",
     sprintf("- **Verdict**: Fisher's exact test, Benjamini-Hochberg corrected across %d pairs.", nrow(x)),
@@ -278,9 +311,12 @@ drift_report <- function(x, path, title = "Breakpoint drift report", note = NULL
     paste0("Verdicts: ", paste(sprintf("%s %d", names(counts), counts), collapse = ", "), "."),
     ""
   )
+  p1 <- if (is.null(x$p_rep_y1)) x$p_y1g1 else x$p_rep_y1
+  p2 <- if (is.null(x$p_rep_y2)) x$p_y2g2 else x$p_rep_y2
   for (mo in unique(x$mo)) {
-    s <- x[x$mo == mo, ]
-    s <- s[order(is.na(s$observed), -abs(s$observed)), ]
+    i <- which(x$mo == mo)
+    i <- i[order(is.na(x$observed[i]), -abs(x$observed[i]))]
+    s <- x[i, ]
     shift <- if (!has_shift) NULL else
       ifelse(is.na(s$shift), "", sprintf("%+.1f (%+.1f to %+.1f)%s", s$shift, s$shift_low, s$shift_high,
                                          ifelse(!is.na(s$p_shift) & s$p_shift < 0.05, " *", "")))
@@ -289,7 +325,7 @@ drift_report <- function(x, path, title = "Breakpoint drift report", note = NULL
                      y1, y2, y1), if (has_shift) " MIC shift |"),
       paste0("|---|---|--:|--:|--:|--:|--:|---|--:|", if (has_shift) "--:|"),
       paste0(sprintf("| %s | %s %s | %s | %s | %s | %s | %s | %s | %s |",
-                     AMR::ab_name(s$ab, info = FALSE), s$method, s$org, pct(s$p_y1g1), pct(s$p_y2g2),
+                     AMR::ab_name(s$ab, info = FALSE), s$method, s$org, pct(p1[i]), pct(p2[i]),
                      pp(s$observed), pp(s$real), pp(s$artefact), s$verdict,
                      sprintf("%d / %d of %d", s$n_y1g1, s$n_y1g2, s$tested_y1)),
              if (has_shift) paste0(" ", shift, " |")),
