@@ -22,7 +22,9 @@ jobs:
       - name: Tests with a known injected artefact
         run: Rscript -e 'testthat::test_dir("tests/testthat", stop_on_failure = TRUE)'
 
-      - name: NCBI run must reproduce the committed results
+      - name: NCBI and NARMS runs must reproduce the committed results
         run: |
           Rscript scripts/ncbi.R
+          Rscript scripts/narms.R
+          git status --porcelain results/
           git diff --exit-code results/

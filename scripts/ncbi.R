@@ -30,10 +30,12 @@ d <- d[!is.na(d$year) & !is.na(d$ab), ]
 d <- d[!duplicated(d[c("accession", "ab", "method", "org")]), ]  # a few isolates repeat a test
 
 # Each BioSample is one isolate from its own patient, so there is nothing for
-# AMR::first_isolate() to remove. Two periods either side of CLSI's 2020 edition, which cut the
-# Enterobacterales fluoroquinolone breakpoints; 2011 is the oldest edition in the AMR package.
-from <- 2011:2018
-to <- 2019:2025
+# AMR::first_isolate() to remove. The first period ends in 2020 because the AMR package's CLSI
+# editions before 2020 lack Enterobacterales rows for many drugs (see read_sir()); between the
+# 2020 and 2025 editions CLSI revised the aminoglycoside, piperacillin/tazobactam and cefepime
+# breakpoints.
+from <- 2016:2020
+to <- 2021:2025
 d <- d[d$year %in% c(from, to), ]
 
 cols <- c("year", "mo", "ab", "mic", "disk", "org")
