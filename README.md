@@ -65,10 +65,27 @@ shift <- drift_mic_shift(isolates, from = 2013:2016, to = 2021:2024)
 drift_report(merge(t, shift, by = c("mo", "ab"), all.x = TRUE), "report.md")
 ```
 
-`guideline_in_force()` decides which edition was in force: the one named for the year, or
-for the last year of a period, since that is when a cumulative antibiogram for it would have
-been written. Labs often adopt a new edition late; `in_force = function(y, org) guideline_in_force(y, org, lag = 1)`
-models a one-year lag. Any function of year and organisation that returns a guideline name works.
+**Which edition was in force.** By default, the one named for the year, or for the last year of
+a period, since that is when a cumulative antibiogram for it would have been written.
+`in_force = function(y, org) guideline_in_force(y, org, lag = 1)` models a one-year lag. A lab
+that knows when it adopted each edition should pass that instead, as a table:
+
+```r
+adoption <- read.csv(text = "
+lab,year,guideline
+north,2014,CLSI 2014
+north,2021,CLSI 2020
+south,2014,CLSI 2014
+south,2020,EUCAST 2020")
+d <- drift_decompose(isolates, from = 2016:2018, to = 2021:2023, adoption = adoption)
+```
+
+From `year` on, that lab read with `guideline`. `isolates` then needs a `lab` column; leave
+`lab` out of the table if all sites changed together. Labs on different editions of the same
+organisation are pooled, each isolate read with its own lab's edition, and `guideline_from` /
+`guideline_to` list them all ("CLSI 2015 + CLSI 2020"). A lab that switched from CLSI to EUCAST
+between the periods, like `south` here, is a source of drift in itself and gets its own row
+("CLSI to EUCAST").
 
 ## Tests
 
@@ -87,6 +104,8 @@ and EUCAST 2017 cut ciprofloxacin (an MIC of 1 went from I to R). The tests chec
 - the censored model recovers a known one-dilution shift from capped panel values, and finds
   a shift while %R stays at 0 (creep below the breakpoint)
 - it returns blank rather than a number when a period is all capped or too small
+- an adoption table overrides the year rule, pools labs on different editions correctly, and
+  separates a lab that moved from CLSI to EUCAST
 
 ```sh
 Rscript -e 'testthat::test_dir("tests/testthat")'
@@ -114,8 +133,8 @@ proof that the split is right is the tests above.
   breakpoints to read them with. Older editions are also sparser: AMR 3.1.0 has CLSI disk
   breakpoints for Enterobacterales only from the 2020 edition for most drugs, so older CLSI
   zones for them come out *not interpretable*.
-- NCBI records the organisation but not the edition a lab used, so the edition is assumed from
-  the collection year.
+- NCBI records the organisation but not the edition a lab used, so the NCBI run assumes the
+  edition from the collection year. With a lab's own adoption dates this guess is not needed.
 - The MIC shift fits one normal distribution per period. Many drugs have a wild-type and a
   resistant population, and then the size of the shift is overstated (two shifts in the
   NCBI run exceed 8 dilutions); its direction and significance are more reliable than its size.

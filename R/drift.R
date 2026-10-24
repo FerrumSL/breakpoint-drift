@@ -29,22 +29,40 @@ guideline_in_force <- function(year, org = "CLSI", lag = 0) {
 }
 
 
+# Edition each lab had adopted by a given year, from a table of adoption dates
+#
+# `adoption` has columns `year` and `guideline` ("CLSI 2019"), and `lab` if labs differ: from
+# `year` on, that lab read with `guideline`. A lab may switch organisation, e.g. CLSI to EUCAST.
+# Returns NA for a lab or year the table does not cover.
+adopted_edition <- function(adoption, year, lab = NA) {
+  vapply(seq_along(year), function(i) {
+    a <- adoption[adoption$year <= year[i], ]
+    if (!is.null(adoption$lab)) a <- a[a$lab %in% rep_len(lab, length(year))[i], ]
+    if (nrow(a) == 0) NA_character_ else a$guideline[which.max(a$year)]
+  }, character(1))
+}
+
+
 # Decompose the change in %R between two years, or two periods of years
 #
 # `data` has one row per isolate and drug, with columns `year`, `mo` (organism), `ab` (drug) and
 # a raw value in `mic` (e.g. "<=0.25") or `disk` (zone diameter in mm), or both columns with one
-# filled per row. An optional `org` column ("CLSI" or "EUCAST") says which organisation's
-# guideline each row was read with; without it every row is CLSI. Deduplicate first, e.g. with
-# AMR::first_isolate().
+# filled per row. Deduplicate first, e.g. with AMR::first_isolate().
 # `from` and `to` are a year each or a range such as 2013:2016. A period is read with the edition
-# in force in its last year, as a cumulative antibiogram for that period would have been.
-# `in_force(year, org)` returns a guideline name such as "CLSI 2019".
+# in force at its last year, as a cumulative antibiogram for that period would have been.
+#
+# Which edition was in force comes from one of two places:
+# - `adoption`, a table of when each lab adopted which edition (see adopted_edition()); `data`
+#   then needs a `lab` column if the table has one. Labs on different editions are pooled.
+# - otherwise the rule `in_force(year, org)`, by default the edition named for the year, with
+#   an optional `org` column ("CLSI" or "EUCAST", default CLSI) per row.
 #
 # One row per organism, drug, method (MIC or disk) and organisation: breakpoints for MICs and
-# zones are revised separately, and a lab switching method is a change of its own.
+# zones are revised separately, and a lab switching method is a change of its own. A lab that
+# switched organisation between the periods gets its own row ("CLSI to EUCAST").
 drift_decompose <- function(data, from = min(data$year), to = max(data$year),
-                            in_force = guideline_in_force) {
-  missing <- setdiff(c("year", "mo", "ab"), names(data))
+                            in_force = guideline_in_force, adoption = NULL) {
+  missing <- setdiff(c("year", "mo", "ab", if (!is.null(adoption$lab)) "lab"), names(data))
   if (!any(c("mic", "disk") %in% names(data))) missing <- c(missing, "mic or disk")
   if (length(missing) > 0) stop("`data` lacks column(s): ", paste(missing, collapse = ", "))
   stopifnot(max(from) < min(to))
@@ -52,45 +70,53 @@ drift_decompose <- function(data, from = min(data$year), to = max(data$year),
   if (is.null(data$org)) data$org <- "CLSI"
   if (any(!is.na(data$mic) & !is.na(data$disk))) stop("A row has both an MIC and a zone diameter.")
   data$method <- ifelse(!is.na(data$mic), "MIC", "disk")
-
   data <- data[data$year %in% c(from, to) & !(is.na(data$mic) & is.na(data$disk)), ]
   data$mo <- as.character(AMR::as.mo(data$mo, info = FALSE))
   data$ab <- as.character(AMR::as.ab(data$ab, info = FALSE))
-  out <- do.call(rbind, lapply(split(data, data$org), decompose_org, from, to, in_force))
-  rownames(out) <- NULL
 
-  out$observed <- out$p_y2g2 - out$p_y1g1
-  out$real_at_new <- out$p_y2g2 - out$p_y1g2
-  out$real_at_old <- out$p_y2g1 - out$p_y1g1
-  out$real <- (out$real_at_new + out$real_at_old) / 2
-  out$artefact <- out$observed - out$real
-  out
-}
-
-decompose_org <- function(data, from, to, in_force) {
-  org <- data$org[1]
-  g <- c(in_force(max(from), org), in_force(max(to), org))
-  if (anyNA(g)) stop("No ", org, " breakpoints in the AMR package for ",
-                     c(max(from), max(to))[is.na(g)][1], ".")
-  label <- function(w) if (length(w) == 1) as.character(w) else paste0(min(w), "-", max(w))
-  periods <- list(from, to)
+  # The two editions each row is read with
+  if (is.null(adoption)) {
+    for (k in 1:2) {
+      year <- max(list(from, to)[[k]])
+      g <- vapply(unique(data$org), function(o) in_force(year, o), character(1))
+      if (anyNA(g)) stop("No ", names(g)[is.na(g)][1], " breakpoints in the AMR package for ", year, ".")
+      data[[paste0("g", k)]] <- unname(g[data$org])
+    }
+  } else {
+    labs <- if (is.null(adoption$lab)) NA else data$lab
+    key <- unique(data.frame(lab = labs))
+    for (k in 1:2) {
+      year <- max(list(from, to)[[k]])
+      g <- adopted_edition(adoption, rep(year, nrow(key)), key$lab)
+      if (anyNA(g)) stop("The adoption table has no edition for lab ", key$lab[is.na(g)][1],
+                         " by ", year, ".")
+      data[[paste0("g", k)]] <- g[match(labs, key$lab)]
+    }
+    org <- function(g) sub(" .*", "", g)
+    data$org <- ifelse(org(data$g1) == org(data$g2), org(data$g2), paste(org(data$g1), "to", org(data$g2)))
+  }
 
   out <- unique(data[c("mo", "ab", "method", "org")])
-  out <- out[order(out$mo, out$ab, out$method), ]
-  key <- paste(out$mo, out$ab, out$method)
+  out <- out[order(out$mo, out$ab, out$method, out$org), ]
+  rownames(out) <- NULL
+  key <- paste(out$mo, out$ab, out$method, out$org)
+  pair <- factor(paste(data$mo, data$ab, data$method, data$org), levels = key)
+  label <- function(w) if (length(w) == 1) as.character(w) else paste0(min(w), "-", max(w))
   out$year_from <- label(from)
   out$year_to <- label(to)
-  out$guideline_from <- g[1]
-  out$guideline_to <- g[2]
+  editions <- function(g) as.vector(tapply(g, pair, function(x) paste(sort(unique(x)), collapse = " + ")))
+  out$guideline_from <- editions(data$g1)
+  out$guideline_to <- editions(data$g2)
 
   for (y in 1:2) {
-    x <- data[data$year %in% periods[[y]], ]
-    sum_by_pair <- function(v) {
-      as.vector(tapply(v, factor(paste(x$mo, x$ab, x$method), levels = key), sum, default = 0))
-    }
+    in_period <- data$year %in% list(from, to)[[y]]
+    x <- data[in_period, ]
+    sum_by_pair <- function(v) as.vector(tapply(v, pair[in_period], sum, default = 0))
     out[[paste0("tested_y", y)]] <- sum_by_pair(rep(1L, nrow(x)))
     for (k in 1:2) {
-      sir <- read_sir(x, g[k])
+      g <- x[[paste0("g", k)]]
+      sir <- rep(NA_character_, nrow(x))
+      for (edition in unique(g)) sir[g == edition] <- read_sir(x[g == edition, ], edition)
       cell <- paste0("y", y, "g", k)
       n <- sum_by_pair(!is.na(sir) & sir != "NI")
       r <- sum_by_pair(sir %in% "R")
@@ -99,6 +125,12 @@ decompose_org <- function(data, from, to, in_force) {
       out[[paste0("p_", cell)]] <- ifelse(n > 0, r / n, NA_real_)
     }
   }
+
+  out$observed <- out$p_y2g2 - out$p_y1g1
+  out$real_at_new <- out$p_y2g2 - out$p_y1g2
+  out$real_at_old <- out$p_y2g1 - out$p_y1g1
+  out$real <- (out$real_at_new + out$real_at_old) / 2
+  out$artefact <- out$observed - out$real
   out
 }
 

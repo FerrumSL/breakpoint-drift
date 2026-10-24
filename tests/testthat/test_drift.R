@@ -185,3 +185,44 @@ test_that("the report lists every pair under its organism", {
   expect_equal(sum(startsWith(md, "| Ciprofloxacin | MIC CLSI | 10.0 | 40.0 | +30.0 | +0.0 | +30.0 |")), 2)
   expect_true(any(grepl("MIC shift", md)))
 })
+
+test_that("an adoption table replaces the year rule", {
+  data <- rbind(isolates(2019, fixed_mics), isolates(2021, fixed_mics))
+  expect_equal(drift_decompose(data)$artefact, 0.30)  # the rule: CLSI 2019, then CLSI 2021
+  # This lab only moved past CLSI 2019 in 2022, so both periods were read the same way
+  late <- data.frame(year = c(2015, 2022), guideline = c("CLSI 2019", "CLSI 2022"))
+  d <- drift_decompose(data, adoption = late)
+  expect_equal(c(d$guideline_from, d$guideline_to), c("CLSI 2019", "CLSI 2019"))
+  expect_equal(c(d$observed, d$artefact), c(0, 0))
+})
+
+test_that("labs on different editions are pooled, each read with its own", {
+  data <- rbind(cbind(isolates(2019, fixed_mics), lab = "A"), cbind(isolates(2020, fixed_mics), lab = "A"),
+                cbind(isolates(2019, fixed_mics), lab = "B"), cbind(isolates(2020, fixed_mics), lab = "B"))
+  adoption <- data.frame(lab = c("A", "A", "B"), year = c(2015, 2020, 2015),
+                         guideline = c("CLSI 2015", "CLSI 2020", "CLSI 2015"))
+  d <- drift_decompose(data, adoption = adoption)
+  expect_equal(d$guideline_to, "CLSI 2015 + CLSI 2020")
+  expect_equal(c(d$p_y1g1, d$p_y2g2), c(0.10, 0.25))  # only lab A's half moved to 40% R
+  expect_equal(c(d$real, d$artefact), c(0, 0.15))
+  expect_error(drift_decompose(rbind(data, cbind(isolates(2020, "1"), lab = "C")), adoption = adoption),
+               "lab C")
+  expect_error(drift_decompose(data[names(data) != "lab"], adoption = adoption), "lab")
+})
+
+test_that("a lab that switched from CLSI to EUCAST gets its own row", {
+  data <- rbind(cbind(isolates(2016, fixed_mics), lab = "A"), cbind(isolates(2020, fixed_mics), lab = "A"),
+                cbind(isolates(2016, fixed_mics), lab = "B"), cbind(isolates(2020, fixed_mics), lab = "B"))
+  adoption <- data.frame(lab = c("A", "B", "B"), year = c(2014, 2014, 2018),
+                         guideline = c("CLSI 2014", "CLSI 2014", "EUCAST 2018"))
+  d <- drift_decompose(data, adoption = adoption)
+  expect_equal(sort(d$org), c("CLSI", "CLSI to EUCAST"))
+  expect_equal(d$guideline_to[d$org == "CLSI to EUCAST"], "EUCAST 2018")
+  expect_equal(d$tested_y1, c(100, 100))
+})
+
+test_that("adopted_edition takes the latest entry on or before the year", {
+  a <- data.frame(year = c(2014, 2018), guideline = c("CLSI 2014", "EUCAST 2018"))
+  expect_equal(adopted_edition(a, c(2013, 2014, 2017, 2018, 2030)),
+               c(NA, "CLSI 2014", "CLSI 2014", "EUCAST 2018", "EUCAST 2018"))
+})
