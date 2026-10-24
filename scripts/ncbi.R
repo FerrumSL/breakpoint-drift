@@ -49,6 +49,10 @@ reported[reported$method != "MIC", names(shift)[-(1:2)]] <- NA
 result <- merge(result, reported, all.x = TRUE)
 
 dir.create("results", showWarnings = FALSE)
+# Rounded so the file is the same on every platform: the last digits of the model fits depend
+# on the BLAS and compiler, and CI checks that a rerun reproduces this file exactly.
+num <- vapply(result, is.numeric, logical(1))
+result[num] <- lapply(result[num], signif, 6)
 write.csv(result, "results/ncbi_drift.csv", row.names = FALSE)
 drift_report(reported, "results/ncbi_report.md",
              title = "Breakpoint drift: NCBI BioSample isolates (not surveillance data)",
