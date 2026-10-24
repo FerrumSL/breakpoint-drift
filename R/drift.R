@@ -89,8 +89,8 @@ drift_decompose <- function(data, from = min(data$year), to = max(data$year),
 # Two Fisher's exact tests per pair, each with a Benjamini-Hochberg correction across pairs:
 # the observed comparison (each year under its own guideline, what a naive antibiogram shows)
 # and the real one (both years under the newer guideline). A pair is a "significant change" if
-# the real test is significant, a "breakpoint artefact" if only the observed one is, and "noise"
-# otherwise. Clopper-Pearson 95% intervals are added for both years under the newer guideline.
+# the real test is significant, a "breakpoint artefact" if only the observed one is and the
+# artefact is larger than the real change, and "noise" otherwise. Clopper-Pearson 95% intervals are added for both years under the newer guideline.
 drift_test <- function(x, alpha = 0.05) {
   fisher <- function(r1, n1, r2, n2) mapply(function(r1, n1, r2, n2) {
     if (n1 == 0 || n2 == 0) return(NA_real_)
@@ -109,7 +109,7 @@ drift_test <- function(x, alpha = 0.05) {
   sig <- function(p) !is.na(p) & p < alpha
   x$verdict <- ifelse(is.na(x$p_real), "not interpretable",
                ifelse(sig(x$p_real), "significant change",
-               ifelse(sig(x$p_observed), "breakpoint artefact", "noise")))
+               ifelse(sig(x$p_observed) & abs(x$artefact) > abs(x$real), "breakpoint artefact", "noise")))
   x
 }
 
@@ -134,7 +134,7 @@ drift_report <- function(x, path, title = "Breakpoint drift report", note = NULL
     "- **Real**: change in the MICs, with the guideline held fixed (mean of holding either one).",
     "- **Artefact**: the rest of the observed change, caused by the breakpoint revision alone.",
     sprintf("- **Verdict**: Fisher's exact test, Benjamini-Hochberg corrected across %d pairs.", nrow(x)),
-    sprintf("- **Read**: share of %s isolates that %s could classify. A capped MIC such as <=1 cannot be read against a breakpoint below it.", y1, g2),
+    sprintf("- **Read**: %s isolates that %s / %s could classify, of those tested. A capped MIC such as <=1 cannot be read against a breakpoint below it.", y1, g1, g2),
     "",
     paste0("Verdicts: ", paste(sprintf("%s %d", names(counts), counts), collapse = ", "), "."),
     ""
@@ -148,7 +148,7 @@ drift_report <- function(x, path, title = "Breakpoint drift report", note = NULL
       sprintf("| %s | %s | %s | %s | %s | %s | %s | %s |",
               AMR::ab_name(s$ab, info = FALSE), pct(s$p_y1g1), pct(s$p_y2g2), pp(s$observed),
               pp(s$real), pp(s$artefact), s$verdict,
-              sprintf("%d/%d", s$n_y1g2, s$tested_y1)),
+              sprintf("%d / %d of %d", s$n_y1g1, s$n_y1g2, s$tested_y1)),
       "")
   }
   writeLines(lines, path)
