@@ -141,8 +141,11 @@ registration. `Rscript scripts/narms.R` (about 90 seconds) uses the *Salmonella*
 
 **Agreement.** Read with the CLSI edition of their year, 2020–2023 cecal isolates agree with
 NARMS's calls in 99.2–99.5% of tests per year (25,011 of 25,136 in 2023,
-[`narms_agreement.csv`](results/narms_agreement.csv)). The disagreements are where NARMS
-uses its own rules, and they are the next two findings.
+[`narms_agreement.csv`](results/narms_agreement.csv)). Every 2023 disagreement is a rule NARMS
+applies differently from CLSI 2023, none a misread value: gentamicin MICs of 4 and 8 (NARMS
+still uses the pre-2023 breakpoint, S ≤ 4 / R ≥ 16) and *E. coli* ciprofloxacin MICs of 0.12
+and 0.25 (NARMS calls them I, as for *Salmonella*; CLSI's Enterobacterales breakpoint makes
+them S). The reading itself is a table lookup, so it can only be as wrong as the table.
 
 **NARMS's 2023 relabelling** ([`narms_relabel.md`](results/narms_relabel.md)). Through 2022,
 NARMS called a cecal *Salmonella* or *E. coli* ciprofloxacin MIC of 0.12 mg/L or more R; in 2023
