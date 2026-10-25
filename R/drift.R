@@ -16,10 +16,19 @@
 # coverage columns say how many tested isolates each p(y, g) still rests on.
 
 
-# Guideline edition in force in a given year
-#
-# Assumes a lab uses the edition named for the year, `lag` years late. Years before the oldest
-# edition in the AMR package give NA; years after the newest give the newest.
+#' Guideline edition in force in a given year
+#'
+#' Assumes a lab uses the edition named for the year, `lag` years late. Years before the oldest
+#' edition in the AMR package give NA; years after the newest give the newest.
+#'
+#' @param year Year(s).
+#' @param org `"CLSI"` or `"EUCAST"`.
+#' @param lag Years a lab takes to adopt a new edition.
+#' @return Character vector of editions, such as `"CLSI 2023"`.
+#' @examples
+#' guideline_in_force(2021:2024)
+#' guideline_in_force(2024, "EUCAST", lag = 1)
+#' @export
 guideline_in_force <- function(year, org = "CLSI", lag = 0) {
   editions <- unique(AMR::clinical_breakpoints$guideline)
   editions <- as.integer(sub(".* ", "", editions[startsWith(editions, paste0(org, " "))]))
@@ -29,11 +38,19 @@ guideline_in_force <- function(year, org = "CLSI", lag = 0) {
 }
 
 
-# Edition each lab had adopted by a given year, from a table of adoption dates
-#
-# `adoption` has columns `year` and `guideline` ("CLSI 2019"), and `lab` if labs differ: from
-# `year` on, that lab read with `guideline`. A lab may switch organisation, e.g. CLSI to EUCAST.
-# Returns NA for a lab or year the table does not cover.
+#' Edition each lab had adopted by a given year
+#'
+#' Looks up a table of adoption dates. A lab may switch organisation, e.g. CLSI to EUCAST.
+#'
+#' @param adoption Data frame with columns `year` and `guideline` (`"CLSI 2019"`), and `lab` if
+#'   labs differ: from `year` on, that lab read with `guideline`.
+#' @param year Year(s) to look up.
+#' @param lab Lab of each year, if `adoption` has a `lab` column.
+#' @return Character vector of editions; NA for a lab or year the table does not cover.
+#' @examples
+#' adoption <- data.frame(year = c(2015, 2021), guideline = c("CLSI 2015", "EUCAST 2021"))
+#' adopted_edition(adoption, c(2014, 2018, 2023))
+#' @export
 adopted_edition <- function(adoption, year, lab = NA) {
   vapply(seq_along(year), function(i) {
     a <- adoption[adoption$year <= year[i], ]
@@ -43,27 +60,44 @@ adopted_edition <- function(adoption, year, lab = NA) {
 }
 
 
-# Decompose the change in %R between two years, or two periods of years
-#
-# `data` has one row per isolate and drug, with columns `year`, `mo` (organism), `ab` (drug) and
-# a raw value in `mic` (e.g. "<=0.25") or `disk` (zone diameter in mm), or both columns with one
-# filled per row. Deduplicate first, e.g. with AMR::first_isolate().
-# An optional `reported` column holds the S/I/R each isolate was originally reported with. The
-# observed change is then the change in reported %R, as the published antibiograms showed it,
-# and the artefact is everything in it that the MICs do not explain, including a lab's own
-# reporting rules.
-# `from` and `to` are a year each or a range such as 2013:2016. A period is read with the edition
-# in force at its last year, as a cumulative antibiogram for that period would have been.
-#
-# Which edition was in force comes from one of two places:
-# - `adoption`, a table of when each lab adopted which edition (see adopted_edition()); `data`
-#   then needs a `lab` column if the table has one. Labs on different editions are pooled.
-# - otherwise the rule `in_force(year, org)`, by default the edition named for the year, with
-#   an optional `org` column ("CLSI" or "EUCAST", default CLSI) per row.
-#
-# One row per organism, drug, method (MIC or disk) and organisation: breakpoints for MICs and
-# zones are revised separately, and a lab switching method is a change of its own. A lab that
-# switched organisation between the periods gets its own row ("CLSI to EUCAST").
+#' Decompose the change in %R between two years, or two periods of years
+#'
+#' Splits the observed change in %R for each organism and drug into the real change (the values
+#' moved, guideline held fixed) and the breakpoint artefact (the rest). The real change is the
+#' mean of holding either guideline fixed (the Shapley value), so the two parts add up to the
+#' observed change. Capped MICs that a guideline cannot read (NI) are left out; the `n_*`
+#' columns say how many isolates each share rests on.
+#'
+#' Which edition was in force comes from one of two places:
+#' - `adoption`, a table of when each lab adopted which edition (see [adopted_edition()]);
+#'   `data` then needs a `lab` column if the table has one. Labs on different editions are
+#'   pooled.
+#' - otherwise the rule `in_force(year, org)`, by default the edition named for the year, with
+#'   an optional `org` column (`"CLSI"` or `"EUCAST"`, default CLSI) per row.
+#'
+#' @param data One row per isolate and drug, with columns `year`, `mo` (organism), `ab` (drug)
+#'   and a raw value in `mic` (e.g. `"<=0.25"`) or `disk` (zone diameter in mm), or both columns
+#'   with one filled per row. Deduplicate first, e.g. with [AMR::first_isolate()]. An optional
+#'   `reported` column holds the S/I/R each isolate was originally reported with; the observed
+#'   change is then the change in reported %R, as the published antibiograms showed it, and the
+#'   artefact also covers a lab's own reporting rules.
+#' @param from,to A year each or a range such as `2013:2016`. A period is read with the edition
+#'   in force at its last year, as a cumulative antibiogram for that period would have been.
+#' @param in_force Function of (year, org) giving the edition in force.
+#' @param adoption Optional table of adoption dates; see [adopted_edition()].
+#' @return A data frame with one row per organism, drug, method (MIC or disk) and organisation:
+#'   breakpoints for MICs and zones are revised separately, and a lab that switched
+#'   organisation between the periods gets its own row (`"CLSI to EUCAST"`). Columns
+#'   `p_y{1,2}g{1,2}` hold %R for each period under each guideline, then `observed`, `real`
+#'   (with `real_at_new` and `real_at_old`) and `artefact`, as shares.
+#' @examples
+#' # CLSI 2023 lowered the Enterobacterales gentamicin breakpoints; the MICs did not change
+#' mics <- rep(c("1", "2", "8", "16"), c(40, 20, 30, 10))
+#' isolates <- data.frame(year = rep(c(2022, 2023), each = 100), mo = "B_ESCHR_COLI",
+#'                        ab = "GEN", mic = mics)
+#' d <- drift_decompose(isolates)
+#' d[c("observed", "real", "artefact")]
+#' @export
 drift_decompose <- function(data, from = min(data$year), to = max(data$year),
                             in_force = guideline_in_force, adoption = NULL) {
   missing <- setdiff(c("year", "mo", "ab", if (!is.null(adoption$lab)) "lab"), names(data))
@@ -174,14 +208,19 @@ read_sir <- function(x, guideline) {
 }
 
 
-# Test each organism x drug pair and label it
-#
-# Two Fisher's exact tests per pair, each with a Benjamini-Hochberg correction across pairs:
-# the observed comparison (each year under its own guideline, what a naive antibiogram shows)
-# and the real one (both years under the newer guideline). A pair is a "significant change" if
-# the real test is significant, a "breakpoint artefact" if only the observed one is and the
-# artefact is larger than the real change, and "noise" otherwise. Clopper-Pearson 95% intervals
-# are added for both years under the newer guideline.
+#' Test each organism x drug pair and label it
+#'
+#' Two Fisher's exact tests per pair, each with a Benjamini-Hochberg correction across pairs:
+#' the observed comparison (each year under its own guideline, what a naive antibiogram shows)
+#' and the real one (both years under the newer guideline). A pair is a "significant change" if
+#' the real test is significant, a "breakpoint artefact" if only the observed one is and the
+#' artefact is larger than the real change, and "noise" otherwise.
+#'
+#' @param x A [drift_decompose()] table.
+#' @param alpha Significance level after correction.
+#' @return `x` with `p_observed`, `p_real`, Clopper-Pearson 95% intervals for both years under
+#'   the newer guideline (`ci_low_*`, `ci_high_*`) and `verdict`.
+#' @export
 drift_test <- function(x, alpha = 0.05) {
   fisher <- function(r1, n1, r2, n2) mapply(function(r1, n1, r2, n2) {
     if (n1 == 0 || n2 == 0) return(NA_real_)
@@ -209,17 +248,27 @@ drift_test <- function(x, alpha = 0.05) {
 }
 
 
-# Shift in the MIC distribution between two periods, in doubling dilutions
-#
-# Each stored MIC is an interval on the log2 scale: "8" means the true MIC is above 4 and at most
-# 8, "<=0.25" at most 0.25, ">=16" (or ">8") above 8. For each organism and drug, a normal model
-# of log2 MIC with a period effect is fitted to these intervals by maximum likelihood
-# (survival::survreg). The shift does not use any breakpoint, so it also catches MICs creeping
-# up below one, before %R moves. p-values are Benjamini-Hochberg corrected across pairs.
-# A period whose values are nearly all capped ("<=1" and nothing else) has no estimable mean, so
-# each period needs `min_n` values, of which `min_exact` are not capped; otherwise the shift is NA.
-# It is also NA when either period's fitted geometric mean lies outside the range the panel
-# tested: mostly capped values let the fit run below or above any tested dilution.
+#' Shift in the MIC distribution between two periods, in doubling dilutions
+#'
+#' Each stored MIC is an interval on the log2 scale: "8" means the true MIC is above 4 and at
+#' most 8, "<=0.25" at most 0.25, ">=16" (or ">8") above 8. For each organism and drug, a normal
+#' model of log2 MIC with a period effect is fitted to these intervals by maximum likelihood
+#' ([survival::survreg()]). The shift does not use any breakpoint, so it also catches MICs
+#' creeping up below one, before %R moves. p-values are Benjamini-Hochberg corrected across
+#' pairs.
+#'
+#' A period whose values are nearly all capped ("<=1" and nothing else) has no estimable mean.
+#' The shift is NA unless each period has `min_n` values, of which `min_exact` are not capped,
+#' and also when either period's fitted geometric mean lies outside the range the panel tested:
+#' mostly capped values let the fit run below or above any tested dilution.
+#'
+#' @inheritParams drift_decompose
+#' @param data As for [drift_decompose()]; only rows with an `mic` are used.
+#' @param min_n,min_exact Minimum values, and uncapped values, per period.
+#' @return A data frame with one row per organism and drug: counts, geometric mean MIC in each
+#'   period (`gm_from`, `gm_to`), `shift` in doubling dilutions with a 95% interval, and
+#'   `p_shift`.
+#' @export
 # ponytail: one normal per period. A wild-type / non-wild-type mixture (PLOS ONE 2019,
 # doi:10.1371/journal.pone.0220427) fits bimodal populations better; upgrade if a resistant
 # subpopulation shifting on its own matters.
@@ -280,10 +329,15 @@ fit_shift <- function(x, min_n, min_exact) {
 }
 
 
-# Write the stewardship report as Markdown, one section per organism
-#
-# `x` comes from drift_test(). If it also has the columns of drift_mic_shift() (merged by `mo`
-# and `ab`, MIC rows only), the report adds the MIC shift.
+#' Write the stewardship report as Markdown, one section per organism
+#'
+#' @param x A [drift_test()] table. If it also has the columns of [drift_mic_shift()] (merged by
+#'   `mo` and `ab`, MIC rows only), the report adds the MIC shift.
+#' @param path File to write.
+#' @param title Report title.
+#' @param note Optional paragraph under the title.
+#' @return `path`, invisibly.
+#' @export
 drift_report <- function(x, path, title = "Breakpoint drift report", note = NULL) {
   pct <- function(p) ifelse(is.na(p), "", sprintf("%.1f", 100 * p))
   pp <- function(p) ifelse(is.na(p), "", sprintf("%+.1f", 100 * p))

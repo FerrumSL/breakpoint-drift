@@ -19,8 +19,13 @@ jobs:
 
       - uses: r-lib/actions/setup-renv@v2
 
-      - name: Tests with a known injected artefact
-        run: Rscript -e 'testthat::test_dir("tests/testthat", stop_on_failure = TRUE)'
+      - name: R CMD check (includes the tests with a known injected artefact)
+        run: |
+          R CMD build .
+          R CMD check --no-manual --as-cran breakpointdrift_*.tar.gz
+          grep -q "Status: OK" breakpointdrift.Rcheck/00check.log
+        env:
+          _R_CHECK_CRAN_INCOMING_REMOTE_: false
 
       - name: NCBI and NARMS runs must reproduce the committed results
         run: |

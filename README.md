@@ -78,7 +78,10 @@ tested (mostly capped data let the fit run off).
 ## Use
 
 ```r
-source("R/drift.R")
+# install.packages("remotes")
+remotes::install_github("FerrumSL/breakpoint-drift")
+library(breakpointdrift)
+
 # one row per first isolate and drug: year, mo, ab, and mic ("<=0.25", "8", ">=16")
 # or disk (mm); optionally org ("CLSI" or "EUCAST", default CLSI) and reported (S/I/R)
 d <- drift_decompose(isolates, from = 2020:2021, to = 2023:2024)
@@ -132,7 +135,7 @@ to R), and one uses EUCAST's 2021 cut to piperacillin/tazobactam. The tests chec
   separates a lab that moved from CLSI to EUCAST
 
 ```sh
-Rscript -e 'testthat::test_dir("tests/testthat")'
+R CMD build . && R CMD check --no-manual breakpointdrift_1.0.0.tar.gz
 ```
 
 ## Validation on US national surveillance (NARMS)
@@ -227,4 +230,5 @@ resistant, and which labs submitted changes from year to year.
 - The AMR package is by Berends et al.
   ([J Stat Softw 2022](https://doi.org/10.18637/jss.v104.i03)), GPL-2.
 
-R 4.6.1; packages pinned in `renv.lock` (`renv::restore()`). Licence: GPL-2.
+R 4.6.1; packages pinned in `renv.lock` (`renv::restore()`). The scripts `source("R/drift.R")`
+so they run from a clone without installing the package. Licence: GPL-2.

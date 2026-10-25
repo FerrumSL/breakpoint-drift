@@ -1,0 +1,12 @@
+^renv$
+^renv\.lock$
+^\.Rprofile$
+^\.github$
+^data/raw$
+^data$
+^results$
+^scripts$
+^README\.md$
+^LICENSE$
+^.*\.Rproj$
+^\.Rproj\.user$

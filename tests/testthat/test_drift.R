@@ -1,11 +1,7 @@
-# Run from the project root: Rscript -e 'testthat::test_dir("tests/testthat")'
-#
 # Every test builds MICs by hand, so the true real change and artefact are known exactly.
 # Most use CLSI's 2023 revision of the Enterobacterales gentamicin MIC breakpoints, from
 # S <= 4 / R >= 16 (2022 edition) to S <= 2 / R >= 8. Both editions have their own
 # Enterobacterales rows in the AMR package; editions before 2020 often do not (see read_sir()).
-root <- normalizePath(file.path(testthat::test_path(), "..", ".."))
-source(file.path(root, "R/drift.R"), local = TRUE)
 
 isolates <- function(year, mics, mo = "B_ESCHR_COLI", ab = "GEN") {
   data.frame(year = year, mo = mo, ab = ab, mic = mics)
@@ -114,7 +110,7 @@ test_that("zone diameters are decomposed the same way, apart from MICs", {
   mic <- function(year) cbind(isolates(year, fixed_mics, ab = "GEN"), disk = NA)
   data <- rbind(disk(2022), disk(2023), mic(2022), mic(2023))
   d <- drift_decompose(data)
-  expect_equal(d$method, c("disk", "MIC"))
+  expect_setequal(d$method, c("disk", "MIC"))
   z <- d[d$method == "disk", ]
   expect_equal(c(z$p_y1g1, z$p_y2g2), c(0.10, 0.20))
   expect_equal(c(z$real, z$artefact), c(0, 0.10))

@@ -1,0 +1,28 @@
+Package: breakpointdrift
+Title: Separate Breakpoint Revisions from Real Change in Antimicrobial Resistance
+Version: 1.0.0
+Authors@R: person("Ferrya", email = "114243237+FerrumSL@users.noreply.github.com",
+    role = c("aut", "cre"))
+Description: When CLSI or EUCAST revises a clinical breakpoint, isolates with the
+    same minimum inhibitory concentration (MIC) change category, and the share of
+    resistant isolates in an antibiogram moves with no change in the bacteria. This
+    package reinterprets raw MICs and zone diameters from two periods under both
+    guideline editions with the 'AMR' package, splits each organism and drug's change
+    in percent resistant into the breakpoint artefact and the real change, tests each
+    pair, estimates the shift in the MIC distribution from an interval-censored model
+    that uses no breakpoint, and writes a report for a stewardship committee.
+License: GPL-2
+URL: https://github.com/FerrumSL/breakpoint-drift
+BugReports: https://github.com/FerrumSL/breakpoint-drift/issues
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Imports:
+    AMR (>= 3.1.0),
+    stats,
+    survival
+Suggests:
+    readxl,
+    testthat (>= 3.0.0),
+    withr
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.1.1
