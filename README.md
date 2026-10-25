@@ -21,6 +21,10 @@ NARMS's own calls in 99.5% of tests. When NARMS changed its own ciprofloxacin ru
 reported *Salmonella* resistance fell from 11.4% to 0.6%; the tool attributes −11.1 points to
 the relabelling and +0.3 to the MICs ([below](#validation-on-us-national-surveillance-narms)).
 
+The same problem, a change in measurement mistaken for a change in reality, comes up in
+official statistics when an office changes its method; see
+[series-break-backcast](https://github.com/FerrumSL/series-break-backcast).
+
 ## Method
 
 Let p(y, g) be the share of isolates from period y that are R under guideline g, and g1, g2
