@@ -227,6 +227,18 @@ test_that("adopted_edition takes the latest entry on or before the year", {
                c(NA, "CLSI 2014", "CLSI 2014", "EUCAST 2018", "EUCAST 2018"))
 })
 
+test_that("the fallback check follows the order, so genera moved out of Enterobacteriaceae in 2016 count too", {
+  # Proteus (now Morganellaceae) is still Enterobacterales, which CLSI Table 2A covers; a
+  # non-fermenter such as Chryseobacterium is not, and Table 2B-5 is its proper table
+  data <- rbind(isolates(2015, rep("8", 50), mo = "B_PROTS_MRBL", ab = "CRO"),
+                isolates(2021, rep("8", 50), mo = "B_PROTS_MRBL", ab = "CRO"),
+                isolates(2015, rep("8", 50), mo = "B_CHRYS_INDL", ab = "CRO"),
+                isolates(2021, rep("8", 50), mo = "B_CHRYS_INDL", ab = "CRO"))
+  d <- drift_decompose(data)
+  expect_equal(d$n_y1g1[d$mo == "B_PROTS_MRBL"], 0)
+  expect_equal(d$n_y1g1[d$mo == "B_CHRYS_INDL"], 50)
+})
+
 test_that("Enterobacterales read with the generic Gram-negative fallback count as not readable", {
   # AMR 3.1.0 has no Enterobacterales ceftriaxone row in CLSI 2015 and falls back to S <= 8
   data <- rbind(isolates(2015, rep("8", 50), ab = "CRO"), isolates(2021, rep("8", 50), ab = "CRO"),
