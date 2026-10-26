@@ -269,7 +269,7 @@ drift_test <- function(x, alpha = 0.05) {
 #'   period (`gm_from`, `gm_to`), `shift` in doubling dilutions with a 95% interval, and
 #'   `p_shift`.
 #' @export
-# ponytail: one normal per period. A wild-type / non-wild-type mixture (PLOS ONE 2019,
+# ponytail: one normal per period. A wild-type / non-wild-type mixture (PLOS ONE 2020,
 # doi:10.1371/journal.pone.0220427) fits bimodal populations better; upgrade if a resistant
 # subpopulation shifting on its own matters.
 drift_mic_shift <- function(data, from = min(data$year), to = max(data$year), min_n = 10,

@@ -210,7 +210,7 @@ resistant, and which labs submitted changes from year to year.
 - The MIC shift fits one normal distribution per period. Many drugs have a wild-type and a
   resistant population, and then the size of the shift is overstated; its direction and
   significance are more reliable than its size. A mixture model with censoring
-  ([PLOS ONE 2019](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0220427))
+  ([PLOS ONE 2020](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0220427))
   would fix this. With tens of thousands of isolates, a shift of 0.1 dilution is significant
   without mattering. Zone diameters get no shift estimate.
 - Deduplication is left to the caller: run `AMR::first_isolate()` (CLSI M39) before the
