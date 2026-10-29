@@ -4,10 +4,11 @@ type: software
 title: "breakpointdrift: separate breakpoint revisions from real change in antimicrobial resistance"
 abstract: "R package that reinterprets raw MICs and zone diameters under CLSI and EUCAST editions, splits each organism and drug's change in percent resistant into breakpoint artefact and real change, tests each pair, and estimates MIC shifts with an interval-censored model."
 authors:
-  - alias: Ualiyev.M
-    email: 114243237+FerrumSL@users.noreply.github.com
+  - given-names: "M."
+    family-names: Ualiyev
+    orcid: "https://orcid.org/0009-0001-9389-0158"
 version: 1.0.0
-date-released: "2026-10-26"
+date-released: "2026-10-29"
 license: GPL-2.0-only
 repository-code: "https://github.com/FerrumSL/breakpoint-drift"
 keywords: [antimicrobial resistance, breakpoints, antibiogram, surveillance, R]
