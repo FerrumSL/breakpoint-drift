@@ -4,21 +4,39 @@
 \alias{drift_test}
 \title{Test each organism x drug pair and label it}
 \usage{
-drift_test(x, alpha = 0.05)
+drift_test(x, alpha = 0.05, min_effect = 0.01)
 }
 \arguments{
-\item{x}{A \code{\link[=drift_decompose]{drift_decompose()}} table.}
+\item{x}{A \code{\link[=drift_bootstrap]{drift_bootstrap()}} table.}
 
 \item{alpha}{Significance level after correction.}
+
+\item{min_effect}{Smallest component, as a share (0.01 is one percentage point), that a
+verdict counts. 0 counts any significant component.}
 }
 \value{
-\code{x} with \code{p_observed}, \code{p_real}, Clopper-Pearson 95\% intervals for both years under
-the newer guideline (\verb{ci_low_*}, \verb{ci_high_*}) and \code{verdict}.
+\code{x} with \code{p_observed}, \code{p_real} (period component), \code{p_artefact} (guideline
+component), \code{p_larger}, Clopper-Pearson 95\% intervals for both years under the newer
+guideline (\verb{ci_low_*}, \verb{ci_high_*}), \code{larger}, \code{verdict} and \code{verdict_note}.
 }
 \description{
-Two Fisher's exact tests per pair, each with a Benjamini-Hochberg correction across pairs:
-the observed comparison (each year under its own guideline, what a naive antibiogram shows)
-and the real one (both years under the newer guideline). A pair is a "significant change" if
-the real test is significant, a "breakpoint artefact" if only the observed one is and the
-artefact is larger than the real change, and "noise" otherwise.
+Tests the observed change, the period component and the guideline component of each pair, and
+which of the two components is larger, each with a Benjamini-Hochberg correction across the
+interpretable pairs. The observed change gets Fisher's exact test (each period under its own
+guideline or as reported, what a naive antibiogram shows). The two components, and the
+difference |guideline| - |period|, get the bootstrap tests of \code{\link[=drift_bootstrap]{drift_bootstrap()}}, so each test
+is of the quantity reported.
+}
+\details{
+A component is shown when its corrected p-value is below \code{alpha} and its size is at least
+\code{min_effect}. Verdicts: "not interpretable" if the period component cannot be estimated, or if
+capped values straddling one guideline's boundary leave a component unknown over a range of
+\code{min_effect} or more (see \code{\link[=drift_decompose]{drift_decompose()}}); "both" if both components are shown;
+"guideline change" or "period change" if only that one is; "unresolved" if neither is but the
+observed change is and both components are non-zero (it is real, but neither component can be
+shown to drive it); otherwise "noise", which means no evidence of change, not evidence of none.
+Column \code{larger} says which component is larger, "guideline" or "period", when the test of
+|guideline| - |period| is significant and that component is shown, and "neither" otherwise.
+Neither label depends on which component is tested first, and a large sample does not turn a
+small component into the label. Column \code{verdict_note} gives the reason for "not interpretable".
 }

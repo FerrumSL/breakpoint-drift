@@ -39,7 +39,8 @@ to <- 2021:2025
 d <- d[d$year %in% c(from, to), ]
 
 cols <- c("year", "mo", "ab", "mic", "disk", "org")
-result <- drift_decompose(d[cols], from = from, to = to)
+set.seed(2026)  # bootstrap intervals and tests, isolates (BioSamples) resampled
+result <- drift_bootstrap(cbind(d[cols], isolate = d$accession), from = from, to = to, B = 2000)
 # Pairs with fewer than 10 readable isolates in either period are kept in the CSV but not tested
 # or reported, so the multiple-comparison correction runs over the reported pairs only.
 enough <- result$n_y1g2 >= 10 & result$n_y2g2 >= 10

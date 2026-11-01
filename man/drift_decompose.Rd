@@ -9,7 +9,8 @@ drift_decompose(
   from = min(data$year),
   to = max(data$year),
   in_force = guideline_in_force,
-  adoption = NULL
+  adoption = NULL,
+  outcome = "R"
 )
 }
 \arguments{
@@ -18,28 +19,45 @@ and a raw value in \code{mic} (e.g. \code{"<=0.25"}) or \code{disk} (zone diamet
 with one filled per row. Deduplicate first, e.g. with \code{\link[AMR:first_isolate]{AMR::first_isolate()}}. An optional
 \code{reported} column holds the S/I/R each isolate was originally reported with; the observed
 change is then the change in reported \%R, as the published antibiograms showed it, and the
-artefact also covers a lab's own reporting rules.}
+guideline component also covers a lab's own reporting rules and any disagreement between the
+lab's reading and this one.}
 
-\item{from, to}{A year each or a range such as \code{2013:2016}. A period is read with the edition
-in force at its last year, as a cumulative antibiogram for that period would have been.}
+\item{from, to}{A year each or a set of years such as \code{2013:2016}. A period is read with the
+edition in force at its last year, as a cumulative antibiogram for that period would have
+been.}
 
 \item{in_force}{Function of (year, org) giving the edition in force.}
 
 \item{adoption}{Optional table of adoption dates; see \code{\link[=adopted_edition]{adopted_edition()}}.}
+
+\item{outcome}{\code{"R"} to count resistant isolates (\%R), or \code{"NS"} to count non-susceptible ones
+(I, SDD or R). A breakpoint revision that only moves the I/R boundary changes \%R but not \%NS.}
 }
 \value{
 A data frame with one row per organism, drug, method (MIC or disk) and organisation:
 breakpoints for MICs and zones are revised separately, and a lab that switched
 organisation between the periods gets its own row (\code{"CLSI to EUCAST"}). Columns
 \verb{p_y\{1,2\}g\{1,2\}} hold \%R for each period under each guideline, then \code{observed}, \code{real}
-(with \code{real_at_new} and \code{real_at_old}) and \code{artefact}, as shares.
+(the period component, with its two orderings \code{real_at_new} and \code{real_at_old}),
+\code{interaction} (\code{real_at_new - real_at_old}) and \code{artefact} (the guideline component), as
+shares. \verb{up_y\{1,2\}} and \verb{down_y\{1,2\}} count, descriptively, the isolates of each period,
+readable both ways, whose own two readings differ: counted under the new guideline but not
+the old one (\code{up}) or the reverse (\code{down}). With a \code{reported} column, an isolate's reading as
+reported is compared with the mean of its two guideline readings instead.
+\verb{straddled_y\{1,2\}} count the capped values read under one guideline but straddling the
+outcome's boundary under the other (such as "<=8" against R >= 8 but not R >= 16); they are
+left out of the one share only, so the components are not identified exactly.
+\code{real_min}, \code{real_max}, \code{artefact_min} and \code{artefact_max} give the range each component can
+lie in, with every straddled value counted as counted or not; \code{\link[=drift_test]{drift_test()}} makes a pair
+not interpretable when that range is \code{min_effect} or wider.
 }
 \description{
-Splits the observed change in \%R for each organism and drug into the real change (the values
-moved, guideline held fixed) and the breakpoint artefact (the rest). The real change is the
-mean of holding either guideline fixed (the Shapley value), so the two parts add up to the
-observed change. Capped MICs that a guideline cannot read (NI) are left out; the \verb{n_*}
-columns say how many isolates each share rests on.
+Splits the observed change in \%R for each organism and drug into the period component (the
+change with the guideline held fixed, column \code{real}) and the guideline component (the rest,
+column \code{artefact}). The period component is the mean of holding either guideline fixed (the
+Shapley value), so the two parts add up to the observed change. A capped MIC that falls on
+both sides of the outcome's boundary under a guideline is left out of that guideline's share;
+the \verb{n_*} columns say how many isolates each share rests on.
 }
 \details{
 Which edition was in force comes from one of two places:

@@ -15,27 +15,31 @@ drift_mic_shift(
 \arguments{
 \item{data}{As for \code{\link[=drift_decompose]{drift_decompose()}}; only rows with an \code{mic} are used.}
 
-\item{from, to}{A year each or a range such as \code{2013:2016}. A period is read with the edition
-in force at its last year, as a cumulative antibiogram for that period would have been.}
+\item{from, to}{A year each or a set of years such as \code{2013:2016}. A period is read with the
+edition in force at its last year, as a cumulative antibiogram for that period would have
+been.}
 
 \item{min_n, min_exact}{Minimum values, and uncapped values, per period.}
 }
 \value{
 A data frame with one row per organism and drug: counts, geometric mean MIC in each
-period (\code{gm_from}, \code{gm_to}), \code{shift} in doubling dilutions with a 95\% interval, and
-\code{p_shift}.
+period (\code{gm_from}, \code{gm_to}), \code{shift} in doubling dilutions with a 95\% interval, \code{p_shift},
+and \code{note}.
 }
 \description{
 Each stored MIC is an interval on the log2 scale: "8" means the true MIC is above 4 and at
 most 8, "<=0.25" at most 0.25, ">=16" (or ">8") above 8. For each organism and drug, a normal
-model of log2 MIC with a period effect is fitted to these intervals by maximum likelihood
-(\code{\link[survival:survreg]{survival::survreg()}}). The shift does not use any breakpoint, so it also catches MICs
-creeping up below one, before \%R moves. p-values are Benjamini-Hochberg corrected across
-pairs.
+model of log2 MIC with a period effect and one standard deviation is fitted to these intervals
+by maximum likelihood (\code{\link[survival:survreg]{survival::survreg()}}). The shift does not use any breakpoint, so it
+also catches MICs creeping up below one, before \%R moves. It summarises the bulk of the
+distribution: where the two periods' spreads differ, or a resistant subpopulation moves on its
+own, one location shift does not describe the change. p-values are Benjamini-Hochberg
+corrected across pairs.
 }
 \details{
 A period whose values are nearly all capped ("<=1" and nothing else) has no estimable mean.
 The shift is NA unless each period has \code{min_n} values, of which \code{min_exact} are not capped,
 and also when either period's fitted geometric mean lies outside the range the panel tested:
-mostly capped values let the fit run below or above any tested dilution.
+mostly capped values let the fit run below or above any tested dilution. Column \code{note} gives
+the reason for every NA.
 }

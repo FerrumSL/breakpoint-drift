@@ -4,7 +4,13 @@
 \alias{drift_report}
 \title{Write the stewardship report as Markdown, one section per organism}
 \usage{
-drift_report(x, path, title = "Breakpoint drift report", note = NULL)
+drift_report(
+  x,
+  path,
+  title = "Breakpoint drift report",
+  note = NULL,
+  outcome = "R"
+)
 }
 \arguments{
 \item{x}{A \code{\link[=drift_test]{drift_test()}} table. If it also has the columns of \code{\link[=drift_mic_shift]{drift_mic_shift()}} (merged by
@@ -15,6 +21,8 @@ drift_report(x, path, title = "Breakpoint drift report", note = NULL)
 \item{title}{Report title.}
 
 \item{note}{Optional paragraph under the title.}
+
+\item{outcome}{The \code{outcome} that \code{x} was computed with, \code{"R"} or \code{"NS"}; sets the labels.}
 }
 \value{
 \code{path}, invisibly.

@@ -1,0 +1,23 @@
+\begin{table}[h]
+\centering
+\scriptsize
+\begin{tabular}{lrrrrrr}
+\toprule
+ & \multicolumn{3}{c}{WHONET \texttt{Breakpoints.txt}} & \multicolumn{3}{c}{AMR 3.1.0} \\
+Edition & 2A family & 2A all & Other tables & 2A family & 2A all & Other tables \\
+\midrule
+CLSI 2011 & 0 & 0 & 865 & 0 & 0 & 722 \\
+CLSI 2012 & 0 & 6 & 1157 & 0 & 6 & 1013 \\
+CLSI 2013 & 0 & 8 & 1095 & 0 & 8 & 948 \\
+CLSI 2014 & 2 & 10 & 1098 & 2 & 10 & 951 \\
+CLSI 2015 & 2 & 13 & 1099 & 2 & 13 & 952 \\
+CLSI 2016 & 2 & 13 & 1104 & 2 & 13 & 959 \\
+CLSI 2017 & 2 & 13 & 1097 & 2 & 13 & 953 \\
+CLSI 2018 & 2 & 13 & 1118 & 2 & 13 & 971 \\
+CLSI 2019 & 4 & 19 & 1193 & 4 & 17 & 1046 \\
+CLSI 2020 & 135 & 150 & 1152 & 135 & 148 & 1056 \\
+\bottomrule
+\end{tabular}
+\caption{Human CLSI breakpoint rows per edition in WHONET's \texttt{Breakpoints.txt} (AMRIE commit 69de201, SHA-256 c9c6e72844d1\ldots) and in the AMR package 3.1.0. 2A family: Table 2A rows coded for the whole Enterobacterales family (WHONET code EBC, AMR \texttt{B\_[ORD]\_ENTRBCTR}); 2A all: every Table 2A row, including those for \textit{Salmonella} and single species. For an \textit{E.~coli} MIC of 1~mg/L and the 66 drugs with an Enterobacterales MIC row in CLSI 2020, \texttt{as.sir()} used the generic Gram-negative row (\texttt{B\_GRAMN}, Table 2B-5) for 31 under CLSI 2019 and 0 under CLSI 2020; 34 had no CLSI 2019 breakpoint at all (\texttt{results/whonet\_example.csv}).}
+\end{table}
+
