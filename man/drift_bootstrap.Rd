@@ -14,7 +14,8 @@ drift_bootstrap(
   B = 1000,
   cluster = NULL,
   min_clusters = 5,
-  level = 0.95
+  level = 0.95,
+  breakpoints = NULL
 )
 }
 \arguments{
@@ -22,8 +23,8 @@ drift_bootstrap(
 and a raw value in \code{mic} (e.g. \code{"<=0.25"}) or \code{disk} (zone diameter in mm), or both columns
 with one filled per row. Deduplicate first, e.g. with \code{\link[AMR:first_isolate]{AMR::first_isolate()}}. An optional
 \code{reported} column holds the S/I/R each isolate was originally reported with; the observed
-change is then the change in reported \%R, as the published antibiograms showed it, and the
-guideline component also covers a lab's own reporting rules and any disagreement between the
+change is then the change in reported \%R, as the published antibiograms showed it, and
+reclassification also covers a lab's own reporting rules and any disagreement between the
 lab's reading and this one.}
 
 \item{from, to}{A year each or a set of years such as \code{2013:2016}. A period is read with the
@@ -40,19 +41,28 @@ been.}
 \item{B}{Bootstrap replicates.}
 
 \item{cluster}{Optional name of a column in \code{data} (such as a sampling site): whole clusters are
-resampled within each period instead of isolates. An isolate with no cluster is its own.}
+resampled within each period instead of isolates. An isolate with no cluster is its own.
+Without \code{cluster}, the unit drawn is the isolate if \code{data} has an \code{isolate} column (all its
+drugs together), else the row; a row with no isolate ID is its own unit.}
 
 \item{min_clusters}{Fewest clusters a period may have with \code{cluster}.}
 
 \item{level}{Interval coverage.}
+
+\item{breakpoints}{Optional MIC breakpoints the AMR package lacks, such as rows of an edition
+it has only partly: a data frame with columns \code{guideline} (\code{"CLSI 2018"}), \code{mo} (an organism
+or group, such as \code{"Enterobacterales"}), \code{ab}, \code{breakpoint_S} (S if MIC <= it) and
+\code{breakpoint_R} (R if MIC >= it for CLSI, > it for EUCAST), and optionally \code{ref_tbl} and
+\code{note} (cite the source there). A row replaces the AMR package's MIC row for the same
+guideline, organism and drug. Editions without such rows are read as before.}
 }
 \value{
 The \code{\link[=drift_decompose]{drift_decompose()}} table with percentile intervals \code{observed_low},
-\code{observed_high}, \code{real_low}, \code{real_high}, \code{artefact_low} and \code{artefact_high}, and
+\code{observed_high}, \code{fixed_low}, \code{fixed_high}, \code{reclass_low} and \code{reclass_high}, and
 uncorrected two-sided bootstrap p-values (twice the smaller share of replicates at or beyond
-0, plus one, so a component that is 0 in every replicate gets 1): \code{boot_p_real} for the
-period component, \code{boot_p_artefact} for the guideline component, and \code{boot_p_larger} for
-|guideline| - |period|, the test of which component is larger (each component taken with the
+0, plus one, so a component that is 0 in every replicate gets 1): \code{boot_p_fixed} for the
+change at fixed criteria, \code{boot_p_reclass} for reclassification, and \code{boot_p_larger} for
+|reclass| - |fixed|, the test of which component is larger (each component taken with the
 sign of its estimate, so the difference is linear and 0 when both estimates are 0). \code{\link[=drift_test]{drift_test()}} corrects
 them. \code{boot_na} counts replicates in which a share had no isolate (left out of intervals and
 p-values), and \code{units_y1}, \code{units_y2} the isolates or clusters resampled in each period. Set
@@ -61,8 +71,8 @@ a seed first for reproducible results.
 \description{
 Resamples isolates (or clusters of isolates) with replacement within each period, reusing the
 S/I/R readings of \code{\link[=drift_decompose]{drift_decompose()}}, and recomputes the decomposition each time. The
-intervals and p-values are for the quantities reported: the Shapley period component and the
-guideline component.
+intervals and p-values are for the quantities reported: the Shapley change at fixed criteria
+and reclassification.
 }
 \details{
 With \code{cluster}, whole clusters are drawn, G - 1 of the G clusters of a period each time
@@ -78,5 +88,5 @@ mics <- rep(c("1", "2", "8", "16"), c(40, 20, 30, 10))
 isolates <- data.frame(year = rep(c(2022, 2023), each = 100), mo = "B_ESCHR_COLI",
                        ab = "GEN", mic = mics, isolate = 1:200)
 set.seed(1)
-drift_bootstrap(isolates, B = 200)[c("artefact", "artefact_low", "artefact_high")]
+drift_bootstrap(isolates, B = 200)[c("reclass", "reclass_low", "reclass_high")]
 }

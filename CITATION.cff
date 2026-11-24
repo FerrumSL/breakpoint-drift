@@ -1,14 +1,14 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
-title: "breakpointdrift: separate breakpoint revisions and reporting-rule changes from change under fixed criteria in antimicrobial resistance trends"
-abstract: "R package that reinterprets raw MICs and zone diameters under CLSI and EUCAST editions, splits each organism and drug's change in percent resistant into a criteria component and a fixed-criteria component, tests both by bootstrap, and estimates MIC shifts with an interval-censored model."
+title: "breakpointdrift: separate breakpoint revisions and reporting-rule changes from change at fixed criteria in antimicrobial resistance trends"
+abstract: "R package that shows how much of a change in an antibiogram comes from new breakpoints or reporting rules and how much from the isolates themselves. It reads raw MICs and zone diameters from two periods with the CLSI or EUCAST criteria in force in each, using the breakpoint tables of the AMR package, and splits the change in percent resistant for every organism and drug into reclassification and the change at fixed criteria, which add up to the observed change. Both parts get bootstrap intervals and tests. The package also estimates the shift in the MIC distribution without breakpoints and writes a report for a stewardship committee."
 authors:
   - given-names: "M."
     family-names: Ualiyev
     orcid: "https://orcid.org/0009-0001-9389-0158"
-version: 1.1.0
-date-released: "2026-11-01"
+version: 1.2.0
+date-released: "2026-11-24"
 license: GPL-2.0-only
 repository-code: "https://github.com/FerrumSL/breakpoint-drift"
 keywords: [antimicrobial resistance, breakpoints, antibiogram, surveillance, R]

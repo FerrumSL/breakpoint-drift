@@ -1,18 +1,18 @@
-# Split a change in %R between two years into a period component (the change with the guideline
-# held fixed) and a guideline component (the part due to reading the two years with different
-# interpretive criteria). The software calls them `real` and `artefact`.
+# Split a change in %R between two years into the change at fixed criteria (both years read with
+# the same guideline, column `fixed`) and reclassification (the part due to reading the two years
+# with different interpretive criteria, column `reclass`).
 #
 # p(y, g) is the share of isolates from year y that are R under guideline g. With y1 < y2 and
 # g1, g2 the guidelines in force in those years:
-#   observed change     = p(y2, g2) - p(y1, g1)
-#   period component    = p(y2, g2) - p(y1, g2)   (same guideline, values from two years)
-#   guideline component = p(y1, g2) - p(y1, g1)   (same values, two guidelines)
+#   observed change          = p(y2, g2) - p(y1, g1)
+#   change at fixed criteria = p(y2, g2) - p(y1, g2)   (same guideline, values from two years)
+#   reclassification         = p(y1, g2) - p(y1, g1)   (same values, two guidelines)
 # The split depends on the order of the two steps. Holding the old guideline instead gives
-#   period component    = p(y2, g1) - p(y1, g1)
-# The reported period component is the mean of the two (the Shapley value), and the guideline
-# component is the rest, so the two parts always add up to the observed change. The two orderings
-# differ by the interaction p(y2, g2) - p(y2, g1) - p(y1, g2) + p(y1, g1), which the Shapley value
-# splits equally by convention.
+#   change at fixed criteria = p(y2, g1) - p(y1, g1)
+# The reported change at fixed criteria is the mean of the two (the Shapley value), and
+# reclassification is the rest, so the two parts always add up to the observed change. The two
+# orderings differ by the interaction p(y2, g2) - p(y2, g1) - p(y1, g2) + p(y1, g1), which the
+# Shapley value splits equally by convention.
 #
 # A capped MIC is an interval of possible true MICs. It is counted when every MIC in that interval
 # falls on the same side of the outcome's boundary: "<=4" is not R under R >= 8, although AMR calls
@@ -24,7 +24,8 @@
 #'
 #' Assumes a lab uses the latest edition named for the year or before it, `lag` years late.
 #' Years before the oldest edition in the AMR package give NA; years after the newest give the
-#' newest.
+#' newest. A year between two editions whose own edition the AMR package lacks gets the latest
+#' earlier one, with a warning.
 #'
 #' @param year Year(s).
 #' @param org `"CLSI"` or `"EUCAST"`.
@@ -41,6 +42,9 @@ guideline_in_force <- function(year, org = "CLSI", lag = 0) {
   # The latest edition on or before the year, so a gap in the editions is never filled by a name
   # the AMR package does not have
   k <- findInterval(year - lag, editions)
+  gap <- !is.na(k) & k > 0 & year - lag <= max(editions) & editions[pmax(k, 1)] != year - lag
+  if (any(gap)) warning("The AMR package has no ", org, " ", paste(unique((year - lag)[gap]), collapse = ", "),
+                        "; read with the latest earlier edition.")
   ifelse(is.na(k) | k == 0, NA_character_, paste(org, editions[pmax(k, 1)]))
 }
 
@@ -61,7 +65,7 @@ guideline_in_force <- function(year, org = "CLSI", lag = 0) {
 adopted_edition <- function(adoption, year, lab = NA) {
   vapply(seq_along(year), function(i) {
     a <- adoption[adoption$year <= year[i], ]
-    if (!is.null(adoption$lab)) a <- a[a$lab %in% rep_len(lab, length(year))[i], ]
+    if (!is.null(adoption[["lab"]])) a <- a[a$lab %in% rep_len(lab, length(year))[i], ]
     if (nrow(a) == 0) NA_character_ else a$guideline[which.max(a$year)]
   }, character(1))
 }
@@ -69,10 +73,10 @@ adopted_edition <- function(adoption, year, lab = NA) {
 
 #' Decompose the change in %R between two years, or two periods of years
 #'
-#' Splits the observed change in %R for each organism and drug into the period component (the
-#' change with the guideline held fixed, column `real`) and the guideline component (the rest,
-#' column `artefact`). The period component is the mean of holding either guideline fixed (the
-#' Shapley value), so the two parts add up to the observed change. A capped MIC that falls on
+#' Splits the observed change in %R for each organism and drug into the change at fixed criteria
+#' (both periods read with the same guideline, column `fixed`) and reclassification (the rest,
+#' column `reclass`). The change at fixed criteria is the mean of holding either guideline fixed
+#' (the Shapley value), so the two parts add up to the observed change. A capped MIC that falls on
 #' both sides of the outcome's boundary under a guideline is left out of that guideline's share;
 #' the `n_*` columns say how many isolates each share rests on.
 #'
@@ -87,8 +91,8 @@ adopted_edition <- function(adoption, year, lab = NA) {
 #'   and a raw value in `mic` (e.g. `"<=0.25"`) or `disk` (zone diameter in mm), or both columns
 #'   with one filled per row. Deduplicate first, e.g. with [AMR::first_isolate()]. An optional
 #'   `reported` column holds the S/I/R each isolate was originally reported with; the observed
-#'   change is then the change in reported %R, as the published antibiograms showed it, and the
-#'   guideline component also covers a lab's own reporting rules and any disagreement between the
+#'   change is then the change in reported %R, as the published antibiograms showed it, and
+#'   reclassification also covers a lab's own reporting rules and any disagreement between the
 #'   lab's reading and this one.
 #' @param from,to A year each or a set of years such as `2013:2016`. A period is read with the
 #'   edition in force at its last year, as a cumulative antibiogram for that period would have
@@ -97,12 +101,18 @@ adopted_edition <- function(adoption, year, lab = NA) {
 #' @param adoption Optional table of adoption dates; see [adopted_edition()].
 #' @param outcome `"R"` to count resistant isolates (%R), or `"NS"` to count non-susceptible ones
 #'   (I, SDD or R). A breakpoint revision that only moves the I/R boundary changes %R but not %NS.
+#' @param breakpoints Optional MIC breakpoints the AMR package lacks, such as rows of an edition
+#'   it has only partly: a data frame with columns `guideline` (`"CLSI 2018"`), `mo` (an organism
+#'   or group, such as `"Enterobacterales"`), `ab`, `breakpoint_S` (S if MIC <= it) and
+#'   `breakpoint_R` (R if MIC >= it for CLSI, > it for EUCAST), and optionally `ref_tbl` and
+#'   `note` (cite the source there). A row replaces the AMR package's MIC row for the same
+#'   guideline, organism and drug. Editions without such rows are read as before.
 #' @return A data frame with one row per organism, drug, method (MIC or disk) and organisation:
 #'   breakpoints for MICs and zones are revised separately, and a lab that switched
 #'   organisation between the periods gets its own row (`"CLSI to EUCAST"`). Columns
-#'   `p_y{1,2}g{1,2}` hold %R for each period under each guideline, then `observed`, `real`
-#'   (the period component, with its two orderings `real_at_new` and `real_at_old`),
-#'   `interaction` (`real_at_new - real_at_old`) and `artefact` (the guideline component), as
+#'   `p_y{1,2}g{1,2}` hold %R for each period under each guideline, then `observed`, `fixed`
+#'   (the change at fixed criteria, with its two orderings `fixed_at_new` and `fixed_at_old`),
+#'   `interaction` (`fixed_at_new - fixed_at_old`) and `reclass` (reclassification), as
 #'   shares. `up_y{1,2}` and `down_y{1,2}` count, descriptively, the isolates of each period,
 #'   readable both ways, whose own two readings differ: counted under the new guideline but not
 #'   the old one (`up`) or the reverse (`down`). With a `reported` column, an isolate's reading as
@@ -110,7 +120,7 @@ adopted_edition <- function(adoption, year, lab = NA) {
 #'   `straddled_y{1,2}` count the capped values read under one guideline but straddling the
 #'   outcome's boundary under the other (such as "<=8" against R >= 8 but not R >= 16); they are
 #'   left out of the one share only, so the components are not identified exactly.
-#'   `real_min`, `real_max`, `artefact_min` and `artefact_max` give the range each component can
+#'   `fixed_min`, `fixed_max`, `reclass_min` and `reclass_max` give the range each component can
 #'   lie in, with every straddled value counted as counted or not; [drift_test()] makes a pair
 #'   not interpretable when that range is `min_effect` or wider.
 #' @examples
@@ -119,18 +129,19 @@ adopted_edition <- function(adoption, year, lab = NA) {
 #' isolates <- data.frame(year = rep(c(2022, 2023), each = 100), mo = "B_ESCHR_COLI",
 #'                        ab = "GEN", mic = mics)
 #' d <- drift_decompose(isolates)
-#' d[c("observed", "real", "artefact")]
+#' d[c("observed", "fixed", "reclass")]
 #' @export
 drift_decompose <- function(data, from = min(data$year), to = max(data$year),
-                            in_force = guideline_in_force, adoption = NULL, outcome = "R") {
-  rows <- interpret_rows(data, from, to, in_force, adoption, outcome)
+                            in_force = guideline_in_force, adoption = NULL, outcome = "R",
+                            breakpoints = NULL) {
+  rows <- interpret_rows(data, from, to, in_force, adoption, outcome, breakpoints)
   reclassified(rows, tabulate_rows(rows))
 }
 
-# Isolates whose own readings differ, signed so that `up` raises the guideline component: the
-# change from the old-side to the new-side reading (period 1: as observed to the guidelines' mean;
-# period 2: the guidelines' mean to as observed). Descriptive only; the guideline component is
-# tested by the bootstrap.
+# Isolates whose own readings differ, signed so that `up` raises reclassification: the change
+# from the old-side to the new-side reading (period 1: as observed to the guidelines' mean;
+# period 2: the guidelines' mean to as observed). Descriptive only; reclassification is tested
+# by the bootstrap.
 reclassified <- function(rows, out) {
   d <- rows$data
   both <- d$read_g1 & d$read_g2
@@ -146,14 +157,16 @@ reclassified <- function(rows, out) {
 
 # Reads every row once under both editions; cell_sums() then sums them, with weights so
 # drift_bootstrap() can resample without reading again.
-interpret_rows <- function(data, from, to, in_force, adoption, outcome) {
+interpret_rows <- function(data, from, to, in_force, adoption, outcome, breakpoints = NULL) {
   outcome <- match.arg(outcome, c("R", "NS"))
-  missing <- setdiff(c("year", "mo", "ab", if (!is.null(adoption$lab)) "lab"), names(data))
+  if (!is.null(breakpoints)) breakpoints <- breakpoint_rows(breakpoints)
+  # Optional columns are looked up with [[ ]]: `$` would take `isolate_source` for `isolate`
+  missing <- setdiff(c("year", "mo", "ab", if (!is.null(adoption[["lab"]])) "lab"), names(data))
   if (!any(c("mic", "disk") %in% names(data))) missing <- c(missing, "mic or disk")
   if (length(missing) > 0) stop("`data` lacks column(s): ", paste(missing, collapse = ", "))
   stopifnot(max(from) < min(to))
   for (col in c("mic", "disk")) if (is.null(data[[col]])) data[[col]] <- NA
-  if (is.null(data$org)) data$org <- "CLSI"
+  if (is.null(data[["org"]])) data$org <- "CLSI"
   if (any(!is.na(data$mic) & !is.na(data$disk))) stop("A row has both an MIC and a zone diameter.")
   data$method <- ifelse(!is.na(data$mic), "MIC", "disk")
   data <- data[data$year %in% c(from, to) & !(is.na(data$mic) & is.na(data$disk)), ]
@@ -169,7 +182,7 @@ interpret_rows <- function(data, from, to, in_force, adoption, outcome) {
       data[[paste0("g", k)]] <- unname(g[data$org])
     }
   } else {
-    labs <- if (is.null(adoption$lab)) NA else data$lab
+    labs <- if (is.null(adoption[["lab"]])) NA else data$lab
     key <- unique(data.frame(lab = labs))
     for (k in 1:2) {
       year <- max(list(from, to)[[k]])
@@ -203,7 +216,9 @@ interpret_rows <- function(data, from, to, in_force, adoption, outcome) {
       x <- data
       x$mic <- ends[[end]]
       sir <- rep(NA_character_, nrow(data))
-      for (edition in unique(g)) sir[g == edition] <- read_sir(x[g == edition, ], edition)
+      # Extra rows are passed only when there are some, so a two-argument read_sir() still works
+      for (edition in unique(g)) sir[g == edition] <- if (is.null(breakpoints)) read_sir(x[g == edition, ], edition) else
+        read_sir(x[g == edition, ], edition, breakpoints)
       hit[[end]] <- ifelse(is.na(sir) | sir == "NI", NA, sir %in% counted)
     }
     # Read when both ends of the value's interval are read and fall on the same side
@@ -211,7 +226,7 @@ interpret_rows <- function(data, from, to, in_force, adoption, outcome) {
     data[[paste0("read_g", k)]] <- read
     data[[paste0("hit_g", k)]] <- read & hit$hi
   }
-  if (!is.null(data$reported)) {
+  if (!is.null(data[["reported"]])) {
     data$read_rep <- data$reported %in% c("S", "SDD", "I", "R")
     data$hit_rep <- data$reported %in% counted
   }
@@ -226,13 +241,18 @@ year_label <- function(w) {
 }
 
 # The two ends of each stored MIC's interval as plain MICs on the dilution grid: "<=4" spans the
-# lowest MIC the AMR package knows to 4, ">8" spans 16 to the highest. A zone diameter (NA here)
-# is read as it is.
+# lowest MIC the AMR package knows to 4, ">8" spans 16 to the highest. A capped value off the grid
+# (">1.5" from a gradient strip) moves to the next grid value, 2. A zone diameter (NA here) is
+# read as it is.
 mic_ends <- function(mic) {
+  u <- unique(mic)  # each distinct value is parsed once
+  if (length(u) < length(mic)) return(lapply(mic_ends(u), `[`, match(mic, u)))
   s <- as.character(AMR::as.mic(mic))
   number <- sub("^[<>=]+", "", s)
   sign <- sub("^([<>=]*).*", "\\1", s)
-  step <- function(k) as.character(AMR::as.mic(2^(round(log2(as.numeric(number))) + k)))
+  e <- log2(as.numeric(number))
+  on_grid <- abs(e - round(e)) < 0.1  # 0.12 is 2^-3 and 0.03 is 2^-5 as stored
+  step <- function(k) as.character(AMR::as.mic(2^ifelse(on_grid, round(e) + k, if (k > 0) ceiling(e) else floor(e))))
   list(lo = ifelse(sign %in% c("<", "<="), "0.0001", ifelse(sign == ">", step(1), number)),
        hi = ifelse(sign %in% c(">", ">="), "4096", ifelse(sign == "<", step(-1), number)))
 }
@@ -267,10 +287,10 @@ components <- function(s) {
   observed <- if (is.null(s$n_rep)) p22 - p11 else share("rep", y2) - share("rep", y1)
   at_new <- p22 - p12
   at_old <- p21 - p11
-  real <- (at_new + at_old) / 2
+  fixed <- (at_new + at_old) / 2
   # Rounded so that a component that is 0 in exact arithmetic is 0, not 1e-17, in every replicate
-  lapply(list(observed = observed, real = real, artefact = observed - real, real_at_new = at_new,
-              real_at_old = at_old), round, 12)
+  lapply(list(observed = observed, fixed = fixed, reclass = observed - fixed, fixed_at_new = at_new,
+              fixed_at_old = at_old), round, 12)
 }
 
 # %R (or %NS) per pair, period and edition, and the decomposition
@@ -290,11 +310,11 @@ tabulate_rows <- function(rows) {
     }
   }
   parts <- components(s)
-  for (name in c("observed", "real_at_new", "real_at_old", "real", "artefact")) out[[name]] <- parts[[name]][, 1]
-  out$interaction <- out$real_at_new - out$real_at_old
+  for (name in c("observed", "fixed_at_new", "fixed_at_old", "fixed", "reclass")) out[[name]] <- parts[[name]][, 1]
+  out$interaction <- out$fixed_at_new - out$fixed_at_old
   range <- straddle_range(s)
   for (name in names(range)) {
-    out[[name]] <- if (grepl("^straddled", name)) range[[name]] else ifelse(is.na(out$real), NA, range[[name]])
+    out[[name]] <- if (grepl("^straddled", name)) range[[name]] else ifelse(is.na(out$fixed), NA, range[[name]])
   }
   out
 }
@@ -321,8 +341,8 @@ straddle_range <- function(s) {
   bound <- function(name, f) apply(do.call(cbind, lapply(parts, function(x) x[[name]][, 1])), 1, f)
   list(straddled_y1 = s$u_g1[y[[1]], 1] + s$u_g2[y[[1]], 1],
        straddled_y2 = s$u_g1[y[[2]], 1] + s$u_g2[y[[2]], 1],
-       real_min = bound("real", min), real_max = bound("real", max),
-       artefact_min = bound("artefact", min), artefact_max = bound("artefact", max))
+       fixed_min = bound("fixed", min), fixed_max = bound("fixed", max),
+       reclass_min = bound("reclass", min), reclass_max = bound("reclass", max))
 }
 
 
@@ -330,8 +350,8 @@ straddle_range <- function(s) {
 #'
 #' Resamples isolates (or clusters of isolates) with replacement within each period, reusing the
 #' S/I/R readings of [drift_decompose()], and recomputes the decomposition each time. The
-#' intervals and p-values are for the quantities reported: the Shapley period component and the
-#' guideline component.
+#' intervals and p-values are for the quantities reported: the Shapley change at fixed criteria
+#' and reclassification.
 #'
 #' With `cluster`, whole clusters are drawn, G - 1 of the G clusters of a period each time
 #' (McCarthy and Snowden 1985; Rao and Wu 1988). Drawing G - 1 makes the bootstrap variance of a
@@ -345,14 +365,16 @@ straddle_range <- function(s) {
 #' @param B Bootstrap replicates.
 #' @param cluster Optional name of a column in `data` (such as a sampling site): whole clusters are
 #'   resampled within each period instead of isolates. An isolate with no cluster is its own.
+#'   Without `cluster`, the unit drawn is the isolate if `data` has an `isolate` column (all its
+#'   drugs together), else the row; a row with no isolate ID is its own unit.
 #' @param min_clusters Fewest clusters a period may have with `cluster`.
 #' @param level Interval coverage.
 #' @return The [drift_decompose()] table with percentile intervals `observed_low`,
-#'   `observed_high`, `real_low`, `real_high`, `artefact_low` and `artefact_high`, and
+#'   `observed_high`, `fixed_low`, `fixed_high`, `reclass_low` and `reclass_high`, and
 #'   uncorrected two-sided bootstrap p-values (twice the smaller share of replicates at or beyond
-#'   0, plus one, so a component that is 0 in every replicate gets 1): `boot_p_real` for the
-#'   period component, `boot_p_artefact` for the guideline component, and `boot_p_larger` for
-#'   |guideline| - |period|, the test of which component is larger (each component taken with the
+#'   0, plus one, so a component that is 0 in every replicate gets 1): `boot_p_fixed` for the
+#'   change at fixed criteria, `boot_p_reclass` for reclassification, and `boot_p_larger` for
+#'   |reclass| - |fixed|, the test of which component is larger (each component taken with the
 #'   sign of its estimate, so the difference is linear and 0 when both estimates are 0). [drift_test()] corrects
 #'   them. `boot_na` counts replicates in which a share had no isolate (left out of intervals and
 #'   p-values), and `units_y1`, `units_y2` the isolates or clusters resampled in each period. Set
@@ -362,16 +384,17 @@ straddle_range <- function(s) {
 #' isolates <- data.frame(year = rep(c(2022, 2023), each = 100), mo = "B_ESCHR_COLI",
 #'                        ab = "GEN", mic = mics, isolate = 1:200)
 #' set.seed(1)
-#' drift_bootstrap(isolates, B = 200)[c("artefact", "artefact_low", "artefact_high")]
+#' drift_bootstrap(isolates, B = 200)[c("reclass", "reclass_low", "reclass_high")]
 #' @export
 drift_bootstrap <- function(data, from = min(data$year), to = max(data$year),
                             in_force = guideline_in_force, adoption = NULL, outcome = "R",
-                            B = 1000, cluster = NULL, min_clusters = 5, level = 0.95) {
+                            B = 1000, cluster = NULL, min_clusters = 5, level = 0.95, breakpoints = NULL) {
   if (!is.null(cluster) && is.null(data[[cluster]])) stop("`data` has no column `", cluster, "`.")
-  rows <- interpret_rows(data, from, to, in_force, adoption, outcome)
+  rows <- interpret_rows(data, from, to, in_force, adoption, outcome, breakpoints)
   d <- rows$data
   # The unit drawn: a cluster, else an isolate (all its drugs together), else a row
-  own <- if (!is.null(d$isolate)) paste("isolate", d$isolate) else paste("row", seq_len(nrow(d)))
+  row <- paste("row", seq_len(nrow(d)))
+  own <- if (is.null(d[["isolate"]])) row else ifelse(is.na(d$isolate), row, paste("isolate", d$isolate))
   unit <- if (!is.null(cluster)) ifelse(is.na(d[[cluster]]), own, paste("cluster", d[[cluster]])) else own
   unit <- paste(d$period, unit)
   first <- !duplicated(unit)
@@ -385,40 +408,56 @@ drift_bootstrap <- function(data, from = min(data$year), to = max(data$year),
   }
   size <- vapply(units, function(u) if (is.null(cluster)) length(u) else length(u) - 1, numeric(1))
   est <- reclassified(rows, tabulate_rows(rows))
+  # Units whose rows fall in the same cells with the same readings are interchangeable: each draw
+  # is counted per kind of unit and summed over one unit of each kind. The draws are the same and
+  # the sums are of whole numbers, so the result is exactly that of summing every row.
+  flags <- d[intersect(c("read_g1", "hit_g1", "read_g2", "hit_g2", "read_rep", "hit_rep"), names(d))]
+  key <- do.call(paste, c(list(rows$group), flags))
+  unit_key <- if (anyDuplicated(index)) vapply(split(key, index), function(k) paste(sort(k), collapse = "|"), "") else key[order(index)]
+  kind <- match(unit_key, unique(unit_key))
+  K <- max(kind)
+  kinds <- split(kind, rep(seq_along(units), lengths(units)))
+  keep <- !duplicated(kind)[index]
+  sub <- rows
+  sub$data <- d[keep, , drop = FALSE]
+  sub$group <- rows$group[keep]
+  sub_kind <- kind[index[keep]]
 
-  draws <- lapply(c(observed = 1, real = 2, artefact = 3, larger = 4), function(i) matrix(NA_real_, nrow(est), B))
-  chunk <- max(1, floor(2e7 / max(1, nrow(d))))  # replicates per pass, about 160 MB of weights
+  draws <- lapply(c(observed = 1, fixed = 2, reclass = 3, larger = 4), function(i) matrix(NA_real_, nrow(est), B))
+  chunk <- max(1, floor(2e7 / max(1, nrow(d))))  # replicates per pass
   for (start in seq(1, B, by = chunk)) {
     b <- min(chunk, B - start + 1)
-    counts <- do.call(rbind, lapply(seq_along(units), function(p) {
+    counts <- 0
+    for (p in seq_along(units)) {
       g <- length(units[[p]])
-      draw <- matrix(sample.int(g, size[p] * b, replace = TRUE), size[p], b)
-      matrix(apply(draw, 2, tabulate, g), g, b)
-    }))
-    parts <- components(cell_sums(rows, counts[index, , drop = FALSE]))
+      draw <- sample.int(g, size[p] * b, replace = TRUE)
+      column <- rep.int(K * (seq_len(b) - 1L), rep.int(size[p], b))
+      counts <- counts + matrix(tabulate(kinds[[p]][draw] + column, K * b), K, b)
+    }
+    parts <- components(cell_sums(sub, counts[sub_kind, , drop = FALSE]))
     cols <- start:(start + b - 1)
     draws$observed[, cols] <- parts$observed
-    draws$real[, cols] <- parts$real
-    draws$artefact[, cols] <- parts$artefact
-    # |guideline| - |period| with the signs of the estimates, so the difference stays linear in
+    draws$fixed[, cols] <- parts$fixed
+    draws$reclass[, cols] <- parts$reclass
+    # |reclass| - |fixed| with the signs of the estimates, so the difference stays linear in
     # the draws and a component near 0 adds no upward bias of its absolute value
-    draws$larger[, cols] <- sign(est$artefact) * parts$artefact - sign(est$real) * parts$real
+    draws$larger[, cols] <- sign(est$reclass) * parts$reclass - sign(est$fixed) * parts$fixed
   }
 
   q <- c((1 - level) / 2, 1 - (1 - level) / 2)
-  for (name in c("observed", "real", "artefact")) {
+  for (name in c("observed", "fixed", "reclass")) {
     ci <- matrix(apply(draws[[name]], 1, stats::quantile, q, na.rm = TRUE, names = FALSE), 2)
     est[[paste0(name, "_low")]] <- ci[1, ]
     est[[paste0(name, "_high")]] <- ci[2, ]
   }
   boot_p <- function(x) {
     tail <- pmin(rowSums(x <= 0, na.rm = TRUE), rowSums(x >= 0, na.rm = TRUE))
-    ifelse(is.na(est$real), NA, pmin(1, 2 * (tail + 1) / (rowSums(!is.na(x)) + 1)))
+    ifelse(is.na(est$fixed), NA, pmin(1, 2 * (tail + 1) / (rowSums(!is.na(x)) + 1)))
   }
-  est$boot_p_real <- boot_p(draws$real)
-  est$boot_p_artefact <- boot_p(draws$artefact)
+  est$boot_p_fixed <- boot_p(draws$fixed)
+  est$boot_p_reclass <- boot_p(draws$reclass)
   est$boot_p_larger <- boot_p(draws$larger)
-  est$boot_na <- rowSums(is.na(draws$real))
+  est$boot_na <- rowSums(is.na(draws$fixed))
   est$units_y1 <- length(units[["1"]])
   est$units_y2 <- length(units[["2"]])
   est
@@ -431,12 +470,13 @@ drift_bootstrap <- function(data, from = min(data$year), to = max(data$year),
 # Table 2B-5, "other non-Enterobacterales"), which is wrong for them: in AMR 3.1.0, CLSI 2011-2019
 # lack Enterobacterales rows for many drugs, and E. coli ceftriaxone would be read with S <= 8
 # instead of S <= 1. Such readings are dropped (NA), so they count as not readable; attribute
-# `fallback` marks them. Each distinct value is read once.
-read_sir <- function(x, guideline) {
+# `fallback` marks them. Each distinct value is read once. `breakpoints` (from breakpoint_rows())
+# adds MIC rows; they are used only for the editions they name.
+read_sir <- function(x, guideline, breakpoints = NULL) {
   key <- paste(x$mo, x$ab, x$method, x$mic, x$disk)
   first <- !duplicated(key)
   if (!all(first)) {
-    sir <- read_sir(x[first, ], guideline)
+    sir <- read_sir(x[first, ], guideline, breakpoints)
     m <- match(key, key[first])
     return(structure(as.vector(sir)[m], fallback = attr(sir, "fallback")[m]))
   }
@@ -448,7 +488,8 @@ read_sir <- function(x, guideline) {
     invisible(AMR::sir_interpretation_history(clean = TRUE))
     sir[i] <- as.character(if (method == "MIC") {
       AMR::as.sir(AMR::as.mic(x$mic[i]), mo = x$mo[i], ab = x$ab[i], guideline = guideline,
-                  capped_mic_handling = "standard", info = FALSE)
+                  capped_mic_handling = "standard", info = FALSE,
+                  reference_data = reference_table(breakpoints, guideline))
     } else {
       AMR::as.sir(AMR::as.disk(x$disk[i]), mo = x$mo[i], ab = x$ab[i], guideline = guideline, info = FALSE)
     })
@@ -463,38 +504,82 @@ read_sir <- function(x, guideline) {
   structure(sir, fallback = fallback)
 }
 
+# Checks extra MIC breakpoint rows and puts them in the AMR package's format
+breakpoint_rows <- function(b) {
+  missing <- setdiff(c("guideline", "mo", "ab", "breakpoint_S", "breakpoint_R"), names(b))
+  if (length(missing) > 0) stop("`breakpoints` lacks column(s): ", paste(missing, collapse = ", "))
+  if (!is.null(b[["method"]]) && any(b$method != "MIC")) stop("`breakpoints` takes MIC rows only.")
+  mo <- AMR::as.mo(b$mo, info = FALSE)
+  rank <- c(subspecies = 1, species = 2, genus = 3, family = 4, order = 5)[AMR::mo_rank(mo, info = FALSE)]
+  if (anyNA(rank)) stop("`breakpoints` has an organism that is not a subspecies, species, genus, family or order.")
+  template <- AMR::clinical_breakpoints[rep(1, nrow(b)), ]
+  template$guideline <- b$guideline
+  template$type <- "human"
+  template$host <- "human"
+  template$method <- "MIC"
+  template$site <- NA_character_
+  template$mo <- mo
+  template$rank_index <- unname(rank)
+  template$ab <- AMR::as.ab(b$ab, info = FALSE)
+  template$ref_tbl <- if (is.null(b[["ref_tbl"]])) "user" else b$ref_tbl
+  template$disk_dose <- NA_character_
+  template$breakpoint_S <- as.numeric(b$breakpoint_S)
+  template$breakpoint_R <- as.numeric(b$breakpoint_R)
+  template$uti <- FALSE
+  template$is_SDD <- FALSE
+  template$note <- if (is.null(b[["note"]])) NA_character_ else b$note
+  template
+}
+
+# The AMR package's table, with the extra rows of this edition in place of its own. AMR applies
+# EUCAST's rule (R if MIC > breakpoint_R) to any table but its own, so for CLSI rows, where R is
+# MIC >= breakpoint_R, the value is lowered by a factor of 1e-9 so that both rules give the same
+# reading.
+reference_table <- function(breakpoints, guideline) {
+  if (is.null(breakpoints) || !guideline %in% breakpoints$guideline) return(AMR::clinical_breakpoints)
+  b <- AMR::clinical_breakpoints
+  extra <- breakpoints[breakpoints$guideline == guideline, ]
+  replaced <- b$guideline == guideline & b$method == "MIC" &
+    paste(b$mo, b$ab) %in% paste(extra$mo, extra$ab)
+  b <- rbind(b[!replaced, ], extra)
+  clsi <- startsWith(b$guideline, "CLSI") & b$method == "MIC" & !is.na(b$breakpoint_R)
+  b$breakpoint_R[clsi] <- b$breakpoint_R[clsi] * (1 - 1e-9)
+  b
+}
+
 
 #' Test each organism x drug pair and label it
 #'
-#' Tests the observed change, the period component and the guideline component of each pair, and
-#' which of the two components is larger, each with a Benjamini-Hochberg correction across the
-#' interpretable pairs. The observed change gets Fisher's exact test (each period under its own
-#' guideline or as reported, what a naive antibiogram shows). The two components, and the
-#' difference |guideline| - |period|, get the bootstrap tests of [drift_bootstrap()], so each test
-#' is of the quantity reported.
+#' Tests the observed change, the change at fixed criteria and reclassification of each pair, and
+#' which of the two is larger, each with a Benjamini-Hochberg correction across the interpretable
+#' pairs. The observed change gets Fisher's exact test (each period under its own guideline or as
+#' reported, what a naive antibiogram shows). The two components, and the difference
+#' |reclass| - |fixed|, get the bootstrap tests of [drift_bootstrap()], so each test is of the
+#' quantity reported.
 #'
-#' A component is shown when its corrected p-value is below `alpha` and its size is at least
-#' `min_effect`. Verdicts: "not interpretable" if the period component cannot be estimated, or if
-#' capped values straddling one guideline's boundary leave a component unknown over a range of
-#' `min_effect` or more (see [drift_decompose()]); "both" if both components are shown;
-#' "guideline change" or "period change" if only that one is; "unresolved" if neither is but the
-#' observed change is and both components are non-zero (it is real, but neither component can be
-#' shown to drive it); otherwise "noise", which means no evidence of change, not evidence of none.
-#' Column `larger` says which component is larger, "guideline" or "period", when the test of
-#' |guideline| - |period| is significant and that component is shown, and "neither" otherwise.
-#' Neither label depends on which component is tested first, and a large sample does not turn a
-#' small component into the label. Column `verdict_note` gives the reason for "not interpretable".
+#' A component is detected when its corrected p-value is below `alpha` and its size is at least
+#' `min_effect`. Verdicts: "not interpretable" if the change at fixed criteria cannot be
+#' estimated, or if capped values straddling one guideline's boundary leave a component unknown
+#' over a range of `min_effect` or more (see [drift_decompose()]); "both" if both components are
+#' detected; "reclassification" or "change at fixed criteria" if only that one is; "unattributed" if
+#' neither is but the observed change is and both components are non-zero (the change is there,
+#' but neither component can be shown to drive it); otherwise "no change detected", which means no
+#' evidence of change, not evidence of none. Column `larger` says which component is larger,
+#' "reclassification" or "fixed criteria", when the test of |reclass| - |fixed| is significant and
+#' that component is detected, and "neither" otherwise. Neither label depends on which component is
+#' tested first, and a large sample does not turn a small component into the label. Column
+#' `verdict_note` gives the reason for "not interpretable".
 #'
 #' @param x A [drift_bootstrap()] table.
 #' @param alpha Significance level after correction.
 #' @param min_effect Smallest component, as a share (0.01 is one percentage point), that a
 #'   verdict counts. 0 counts any significant component.
-#' @return `x` with `p_observed`, `p_real` (period component), `p_artefact` (guideline
-#'   component), `p_larger`, Clopper-Pearson 95% intervals for both years under the newer
+#' @return `x` with `p_observed`, `p_fixed` (change at fixed criteria), `p_reclass`
+#'   (reclassification), `p_larger`, Clopper-Pearson 95% intervals for both years under the newer
 #'   guideline (`ci_low_*`, `ci_high_*`), `larger`, `verdict` and `verdict_note`.
 #' @export
 drift_test <- function(x, alpha = 0.05, min_effect = 0.01) {
-  if (is.null(x$boot_p_artefact)) {
+  if (is.null(x$boot_p_reclass)) {
     stop("drift_test() needs a drift_bootstrap() table: the components are tested by the bootstrap.")
   }
   fisher <- function(r1, n1, r2, n2) mapply(function(r1, n1, r2, n2) {
@@ -502,11 +587,11 @@ drift_test <- function(x, alpha = 0.05, min_effect = 0.01) {
     stats::fisher.test(matrix(c(r1, n1 - r1, r2, n2 - r2), 2))$p.value
   }, r1, n1, r2, n2)
   # Width of the range the straddled capped values leave each component in (0 for older tables)
-  width <- if (is.null(x$artefact_max)) 0 else
-    pmax(x$real_max - x$real_min, x$artefact_max - x$artefact_min)
+  width <- if (is.null(x$reclass_max)) 0 else
+    pmax(x$fixed_max - x$fixed_min, x$reclass_max - x$reclass_min)
   straddled <- !is.na(width) & width > 1e-9 & width >= min_effect - 1e-9
-  ok <- !is.na(x$real) & !straddled
-  x$verdict_note <- ifelse(is.na(x$real), "no reading under one guideline in a period",
+  ok <- !is.na(x$fixed) & !straddled
+  x$verdict_note <- ifelse(is.na(x$fixed), "no reading under one guideline in a period",
             ifelse(straddled, sprintf("capped values leave a component unknown over %.1f points", 100 * width), ""))
   adjust <- function(p) stats::p.adjust(ifelse(ok, p, NA), "BH")  # over the interpretable pairs
   x$p_observed <- adjust(if (is.null(x$r_rep_y1)) {
@@ -514,8 +599,8 @@ drift_test <- function(x, alpha = 0.05, min_effect = 0.01) {
   } else {
     fisher(x$r_rep_y1, x$n_rep_y1, x$r_rep_y2, x$n_rep_y2)
   })
-  x$p_real <- adjust(x$boot_p_real)
-  x$p_artefact <- adjust(x$boot_p_artefact)
+  x$p_fixed <- adjust(x$boot_p_fixed)
+  x$p_reclass <- adjust(x$boot_p_reclass)
   x$p_larger <- adjust(x$boot_p_larger)
 
   for (cell in c("y1g2", "y2g2")) {
@@ -525,27 +610,27 @@ drift_test <- function(x, alpha = 0.05, min_effect = 0.01) {
     x[[paste0("ci_high_", cell)]] <- ci[2, ]
   }
 
-  shown <- function(p, est) !is.na(p) & p < alpha & !is.na(est) & abs(est) >= min_effect - 1e-9
-  period <- shown(x$p_real, x$real)
-  guideline <- shown(x$p_artefact, x$artefact)
-  # The larger component is named only when it is itself shown: the two tests are corrected in
-  # separate families, so the test of |guideline| - |period| can pass where the component's own
+  detected <- function(p, est) !is.na(p) & p < alpha & !is.na(est) & abs(est) >= min_effect - 1e-9
+  fixed_shown <- detected(x$p_fixed, x$fixed)
+  reclass_shown <- detected(x$p_reclass, x$reclass)
+  # The larger component is named only when it is itself detected: the two tests are corrected in
+  # separate families, so the test of |reclass| - |fixed| can pass where the component's own
   # test does not
-  bigger <- ifelse(abs(x$artefact) > abs(x$real), "guideline", "period")
+  bigger <- ifelse(abs(x$reclass) > abs(x$fixed), "reclassification", "fixed criteria")
   x$larger <- ifelse(!ok, NA, ifelse(!is.na(x$p_larger) & x$p_larger < alpha &
-                                     ifelse(bigger == "guideline", guideline, period), bigger, "neither"))
+                                     ifelse(bigger == "reclassification", reclass_shown, fixed_shown), bigger, "neither"))
   # With one component exactly 0 the observed change is the other one, so it is judged by that
-  # component's test alone, never "unresolved"
-  both_present <- !is.na(x$real) & !is.na(x$artefact) & x$real != 0 & x$artefact != 0
+  # component's test alone, never "unattributed"
+  both_present <- !is.na(x$fixed) & !is.na(x$reclass) & x$fixed != 0 & x$reclass != 0
   x$verdict <- ifelse(!ok, "not interpretable",
-               ifelse(period & guideline, "both",
-               ifelse(guideline, "guideline change",
-               ifelse(period, "period change",
-               ifelse(both_present & shown(x$p_observed, x$observed), "unresolved", "noise")))))
+               ifelse(fixed_shown & reclass_shown, "both",
+               ifelse(reclass_shown, "reclassification",
+               ifelse(fixed_shown, "change at fixed criteria",
+               ifelse(both_present & detected(x$p_observed, x$observed), "unattributed", "no change detected")))))
   x
 }
 
-verdict_levels <- c("period change", "guideline change", "both", "unresolved", "noise", "not interpretable")
+verdict_levels <- c("change at fixed criteria", "reclassification", "both", "unattributed", "no change detected", "not interpretable")
 
 
 #' Shift in the MIC distribution between two periods, in doubling dilutions
@@ -669,10 +754,10 @@ drift_report <- function(x, path, title = "Breakpoint drift report", note = NULL
     "",
     if (!reported) "- **Observed**: %R in each period under its own guideline, as an antibiogram reports it."
     else "- **Observed**: %R as originally reported in each period.",
-    "- **Period**: change in %R with the guideline held fixed (mean of holding either one). Not a causal estimate: sampling, panels and case mix can change too.",
-    if (!reported) "- **Guideline**: the rest of the observed change, from reading the periods with different guidelines."
-    else "- **Guideline**: the rest of the observed change: the guideline revision, the lab's own reporting rules, and any disagreement between the lab's reading and this one.",
-    sprintf("- **Verdict**: which component is shown by its bootstrap test, Benjamini-Hochberg corrected across the %d interpretable pairs; **Larger**: which component is larger, where that is shown. Fisher's exact test of the observed change decides *unresolved*.", sum(!is.na(x$real))),
+    "- **Fixed criteria**: change in %R with both periods read with the same guideline (mean of holding either one). Not a causal estimate: sampling, panels and case mix can change too.",
+    if (!reported) "- **Reclassification**: the rest of the observed change, from reading the periods with different guidelines."
+    else "- **Reclassification**: the rest of the observed change: the guideline revision, the lab's own reporting rules, and any disagreement between the lab's reading and this one.",
+    sprintf("- **Verdict**: which component is detected by its bootstrap test, Benjamini-Hochberg corrected across the %d interpretable pairs; **Larger**: which component is larger, where that is detected. Fisher's exact test of the observed change decides *unattributed*.", sum(x$verdict != "not interpretable")),
     sprintf("- **Read**: %s isolates that the old / new guideline could classify, of those tested. A capped MIC such as <=1 is left out only if it can fall on both sides of the breakpoint.", y1),
     if (has_shift) "- **MIC shift**: change in the MIC distribution in doubling dilutions, with 95% CI, from an interval-censored normal model that uses no breakpoint. * = significant after Benjamini-Hochberg correction.",
     "",
@@ -689,12 +774,12 @@ drift_report <- function(x, path, title = "Breakpoint drift report", note = NULL
       ifelse(is.na(s$shift), "", sprintf("%+.1f (%+.1f to %+.1f)%s", s$shift, s$shift_low, s$shift_high,
                                          ifelse(!is.na(s$p_shift) & s$p_shift < 0.05, " *", "")))
     lines <- c(lines, paste0("## *", AMR::mo_name(mo, info = FALSE), "*"), "",
-      paste0(sprintf("| Drug | Test | %%R %s | %%R %s | Observed | Period | Guideline | Verdict | Larger | Read %s |",
+      paste0(sprintf("| Drug | Test | %%R %s | %%R %s | Observed | Fixed criteria | Reclassification | Verdict | Larger | Read %s |",
                      y1, y2, y1), if (has_shift) " MIC shift |"),
       paste0("|---|---|--:|--:|--:|--:|--:|---|---|--:|", if (has_shift) "--:|"),
       paste0(sprintf("| %s | %s %s | %s | %s | %s | %s | %s | %s | %s | %s |",
                      AMR::ab_name(s$ab, info = FALSE), s$method, s$org, pct(p1[i]), pct(p2[i]),
-                     pp(s$observed), pp(s$real), pp(s$artefact), s$verdict, ifelse(is.na(s$larger), "", s$larger),
+                     pp(s$observed), pp(s$fixed), pp(s$reclass), s$verdict, ifelse(is.na(s$larger), "", s$larger),
                      sprintf("%d / %d of %d", s$n_y1g1, s$n_y1g2, s$tested_y1)),
              if (has_shift) paste0(" ", shift, " |")),
       "")

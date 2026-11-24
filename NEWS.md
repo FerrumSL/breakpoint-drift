@@ -1,3 +1,65 @@
+# breakpointdrift 1.2.0
+
+## Renamed (breaking)
+
+The paper, the README and the code now use one set of names. Results are unchanged; only names
+differ.
+
+- The two components are **reclassification** (column `reclass`, was `artefact`) and the
+  **change at fixed criteria** (column `fixed`, was `real`). Every derived column follows:
+  `fixed_low`, `fixed_high`, `fixed_min`, `fixed_max`, `fixed_at_new`, `fixed_at_old`,
+  `boot_p_fixed`, `p_fixed`, and the same with `reclass`.
+- Verdicts: "guideline change" is now "reclassification", "period change" "change at fixed
+  criteria", "unresolved" "unattributed" and "noise" "no change detected". "both" and "not
+  interpretable" are unchanged.
+- Column `larger` says "reclassification" or "fixed criteria" (was "guideline" or "period").
+- `drift_report()` heads its columns "Fixed criteria" and "Reclassification".
+- The supplementary tables, the simulation outputs and the keys of `results/narms_numbers.csv`
+  use the same words.
+
+## Since 1.1.0
+
+Apart from the names, no real-data result in `results/` changes. New files are listed below, and the simulation
+(`results/simulation*`) was rerun with 1,000 datasets per cell instead of 200.
+
+## New
+
+- `drift_decompose()` and `drift_bootstrap()` take `breakpoints`: MIC rows the AMR package
+  lacks, which replace its row for the same guideline, organism and drug. Editions without such
+  rows are read as before. The AMR package reads any table but its own with EUCAST's "R if
+  MIC > breakpoint" rule; the CLSI rows of an extended table are adjusted so that CLSI's
+  "R if MIC >= breakpoint" still holds (all 1,578 of its own MIC rows of CLSI 2018 and 2023 read
+  the same; the tests check every tenth).
+- `scripts/ncbi_fluoroquinolones.R`: CLSI's 2019 ciprofloxacin and levofloxacin revision in
+  the calls of NCBI BioSample antibiograms (all Enterobacterales BioSamples with one, fetched
+  2026-11-17 by `scripts/fetch_ncbi_enterobacterales.py`), with the earlier breakpoints from
+  `data/breakpoints_clsi_fluoroquinolones.csv`. Writes `results/ncbi_fluoroquinolones*.csv`.
+
+## Faster
+
+- `drift_bootstrap()` counts the draws per kind of unit (units whose rows are alike) instead of
+  per unit, and `mic_ends()` parses each distinct value once. The random draws and every result
+  are unchanged; a simulated dataset with 5,000 isolates per period runs about 2.7 times as fast.
+
+## Fixed
+
+- Optional columns (`isolate`, `reported`, `org`, `lab`) were looked up with `$`, which also
+  takes a column whose name only starts that way. A column `isolate_source` with no `isolate`
+  column became the bootstrap unit, so two sources gave two units per period and a zero-width
+  interval; `reported_date` made the observed change NA; `organism` stopped with an error.
+  They are now matched by their exact name.
+- `drift_bootstrap()` put every row with a missing `isolate` ID into one unit. Such a row is now
+  its own unit.
+- A capped value off the dilution grid, such as ">1.5" from a gradient strip, was read as
+  above 2 (">1.5" started at 4). It now starts at the next grid value, 2.
+- `drift_report()` counted pairs made not interpretable by straddling capped values among the
+  interpretable pairs in its header.
+
+## Changed
+
+- `guideline_in_force()` warns when the AMR package lacks the edition of a year between two
+  editions it has, and says that the latest earlier edition is used.
+
 # breakpointdrift 1.1.0
 
 ## Fixed

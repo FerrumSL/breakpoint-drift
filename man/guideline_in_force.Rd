@@ -19,7 +19,8 @@ Character vector of editions, such as \code{"CLSI 2023"}.
 \description{
 Assumes a lab uses the latest edition named for the year or before it, \code{lag} years late.
 Years before the oldest edition in the AMR package give NA; years after the newest give the
-newest.
+newest. A year between two editions whose own edition the AMR package lacks gets the latest
+earlier one, with a warning.
 }
 \examples{
 guideline_in_force(2021:2024)

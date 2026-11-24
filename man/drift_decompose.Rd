@@ -10,7 +10,8 @@ drift_decompose(
   to = max(data$year),
   in_force = guideline_in_force,
   adoption = NULL,
-  outcome = "R"
+  outcome = "R",
+  breakpoints = NULL
 )
 }
 \arguments{
@@ -18,8 +19,8 @@ drift_decompose(
 and a raw value in \code{mic} (e.g. \code{"<=0.25"}) or \code{disk} (zone diameter in mm), or both columns
 with one filled per row. Deduplicate first, e.g. with \code{\link[AMR:first_isolate]{AMR::first_isolate()}}. An optional
 \code{reported} column holds the S/I/R each isolate was originally reported with; the observed
-change is then the change in reported \%R, as the published antibiograms showed it, and the
-guideline component also covers a lab's own reporting rules and any disagreement between the
+change is then the change in reported \%R, as the published antibiograms showed it, and
+reclassification also covers a lab's own reporting rules and any disagreement between the
 lab's reading and this one.}
 
 \item{from, to}{A year each or a set of years such as \code{2013:2016}. A period is read with the
@@ -32,14 +33,21 @@ been.}
 
 \item{outcome}{\code{"R"} to count resistant isolates (\%R), or \code{"NS"} to count non-susceptible ones
 (I, SDD or R). A breakpoint revision that only moves the I/R boundary changes \%R but not \%NS.}
+
+\item{breakpoints}{Optional MIC breakpoints the AMR package lacks, such as rows of an edition
+it has only partly: a data frame with columns \code{guideline} (\code{"CLSI 2018"}), \code{mo} (an organism
+or group, such as \code{"Enterobacterales"}), \code{ab}, \code{breakpoint_S} (S if MIC <= it) and
+\code{breakpoint_R} (R if MIC >= it for CLSI, > it for EUCAST), and optionally \code{ref_tbl} and
+\code{note} (cite the source there). A row replaces the AMR package's MIC row for the same
+guideline, organism and drug. Editions without such rows are read as before.}
 }
 \value{
 A data frame with one row per organism, drug, method (MIC or disk) and organisation:
 breakpoints for MICs and zones are revised separately, and a lab that switched
 organisation between the periods gets its own row (\code{"CLSI to EUCAST"}). Columns
-\verb{p_y\{1,2\}g\{1,2\}} hold \%R for each period under each guideline, then \code{observed}, \code{real}
-(the period component, with its two orderings \code{real_at_new} and \code{real_at_old}),
-\code{interaction} (\code{real_at_new - real_at_old}) and \code{artefact} (the guideline component), as
+\verb{p_y\{1,2\}g\{1,2\}} hold \%R for each period under each guideline, then \code{observed}, \code{fixed}
+(the change at fixed criteria, with its two orderings \code{fixed_at_new} and \code{fixed_at_old}),
+\code{interaction} (\code{fixed_at_new - fixed_at_old}) and \code{reclass} (reclassification), as
 shares. \verb{up_y\{1,2\}} and \verb{down_y\{1,2\}} count, descriptively, the isolates of each period,
 readable both ways, whose own two readings differ: counted under the new guideline but not
 the old one (\code{up}) or the reverse (\code{down}). With a \code{reported} column, an isolate's reading as
@@ -47,15 +55,15 @@ reported is compared with the mean of its two guideline readings instead.
 \verb{straddled_y\{1,2\}} count the capped values read under one guideline but straddling the
 outcome's boundary under the other (such as "<=8" against R >= 8 but not R >= 16); they are
 left out of the one share only, so the components are not identified exactly.
-\code{real_min}, \code{real_max}, \code{artefact_min} and \code{artefact_max} give the range each component can
+\code{fixed_min}, \code{fixed_max}, \code{reclass_min} and \code{reclass_max} give the range each component can
 lie in, with every straddled value counted as counted or not; \code{\link[=drift_test]{drift_test()}} makes a pair
 not interpretable when that range is \code{min_effect} or wider.
 }
 \description{
-Splits the observed change in \%R for each organism and drug into the period component (the
-change with the guideline held fixed, column \code{real}) and the guideline component (the rest,
-column \code{artefact}). The period component is the mean of holding either guideline fixed (the
-Shapley value), so the two parts add up to the observed change. A capped MIC that falls on
+Splits the observed change in \%R for each organism and drug into the change at fixed criteria
+(both periods read with the same guideline, column \code{fixed}) and reclassification (the rest,
+column \code{reclass}). The change at fixed criteria is the mean of holding either guideline fixed
+(the Shapley value), so the two parts add up to the observed change. A capped MIC that falls on
 both sides of the outcome's boundary under a guideline is left out of that guideline's share;
 the \verb{n_*} columns say how many isolates each share rests on.
 }
@@ -75,5 +83,5 @@ mics <- rep(c("1", "2", "8", "16"), c(40, 20, 30, 10))
 isolates <- data.frame(year = rep(c(2022, 2023), each = 100), mo = "B_ESCHR_COLI",
                        ab = "GEN", mic = mics)
 d <- drift_decompose(isolates)
-d[c("observed", "real", "artefact")]
+d[c("observed", "fixed", "reclass")]
 }

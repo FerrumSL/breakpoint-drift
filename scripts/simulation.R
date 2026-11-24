@@ -1,6 +1,6 @@
-# Simulation: does the decomposition recover a known period component and a known guideline
-# component, and how often does each verdict appear?
-# Run from the project root: Rscript scripts/simulation.R  (about 50 minutes on 16 cores)
+# Simulation: does the decomposition recover a known change at fixed criteria and a known
+# reclassification, and how often does each verdict appear?
+# Run from the project root: Rscript scripts/simulation.R  (about 2 hours on 16 cores)
 #
 # Each period draws n true log2 MICs from a mixture: a wild type N(r - 4, 1.3) (or N(r - 2, 1.3),
 # "near": its tail reaches the revised breakpoint) and a resistant share N(r + 1, 1), where r is
@@ -20,7 +20,7 @@
 #              rule already called the revised breakpoint's R in period 1 ("own rule", shift 1)
 #   clustered  20 sites per period whose resistant share varies (log-normal, SD 0.5, mean prev),
 #              analysed with the isolate and with the site bootstrap
-#   low        rare resistance: resistant share 0.5% or 2%, period change 0 or +1 point
+#   low        rare resistance: resistant share 0.5% or 2%, change at fixed criteria 0 or +1 point
 #   straddle   %R with 30% of values capped at "<=8", which straddles the revised R breakpoint (shift 1);
 #              these pairs should be "not interpretable"
 # Then two further checks: 20 pairs in one dataset with Benjamini-Hochberg correction, and the
@@ -75,10 +75,10 @@ truth <- function(cell) {
   wt <- if (cell$wt == "near") 2 else 4
   t <- if (cell$outcome == "R") rev$r else rev$s + 1
   p <- outer(c(cell$prev, cell$prev + cell$delta), t, Vectorize(function(q, k) p_at(q, k, rev, wt)))
-  real <- ((p[2, 2] - p[1, 2]) + (p[2, 1] - p[1, 1])) / 2
+  fixed <- ((p[2, 2] - p[1, 2]) + (p[2, 1] - p[1, 1])) / 2
   observed <- p[2, 2] - p[1, 1]
   if (cell$reported == "own rule") observed <- p[2, 2] - p_at(cell$prev, rev$r[1] - 1, rev, wt)
-  c(real = real, artefact = observed - real)
+  c(fixed = fixed, reclass = observed - fixed)
 }
 
 one_run <- function(cell, B) {
@@ -99,16 +99,16 @@ one_run <- function(cell, B) {
     data$reported <- ifelse(value >= 2^(rev$r[1] - 1), "R", "S")
   }
   t <- drift_test(drift_bootstrap(data, B = B, outcome = cell$outcome))
-  out <- c(real = t$real, artefact = t$artefact, real_low = t$real_low, real_high = t$real_high,
-           artefact_low = t$artefact_low, artefact_high = t$artefact_high,
-           verdict = match(t$verdict, verdict_levels), larger = match(t$larger, c("guideline", "period", "neither")),
+  out <- c(fixed = t$fixed, reclass = t$reclass, fixed_low = t$fixed_low, fixed_high = t$fixed_high,
+           reclass_low = t$reclass_low, reclass_high = t$reclass_high,
+           verdict = match(t$verdict, verdict_levels), larger = match(t$larger, c("reclassification", "fixed criteria", "neither")),
            excluded = 1 - (t$n_y1g2 + t$n_y2g2) / (t$tested_y1 + t$tested_y2))
   if (cell$clustered) {
     s <- drift_test(drift_bootstrap(data, B = B, outcome = cell$outcome, cluster = "site"))
-    out <- c(out, real_low_site = s$real_low, real_high_site = s$real_high,
-             artefact_low_site = s$artefact_low, artefact_high_site = s$artefact_high,
+    out <- c(out, fixed_low_site = s$fixed_low, fixed_high_site = s$fixed_high,
+             reclass_low_site = s$reclass_low, reclass_high_site = s$reclass_high,
              verdict_site = match(s$verdict, verdict_levels),
-             larger_site = match(s$larger, c("guideline", "period", "neither")))
+             larger_site = match(s$larger, c("reclassification", "fixed criteria", "neither")))
   }
   out
 }
@@ -132,9 +132,9 @@ grid <- rbind(
 grid <- grid[!(grid$shift == 0 & grid$capped > 0), ]  # capping at S <= 2 changes nothing when S stays 2
 grid <- grid[order(grid$set != "base"), ]
 rownames(grid) <- NULL
-reps <- as.integer(Sys.getenv("SIM_REPS", "200"))  # SIM_REPS=2 for a quick check
+reps <- as.integer(Sys.getenv("SIM_REPS", "1000"))  # SIM_REPS=2 for a quick check
 B <- as.integer(Sys.getenv("SIM_B", "999"))
-# 200 datasets per cell; Monte Carlo error on a 95% coverage is about 1.5 points
+# 1,000 datasets per cell; Monte Carlo error on a 95% coverage is about 0.7 points
 
 cores <- max(1, detectCores() - 1)
 started <- Sys.time()
@@ -149,26 +149,26 @@ out <- do.call(rbind, lapply(seq_len(nrow(grid)), function(j) {
   tr <- truth(cell)
   x <- as.data.frame(runs[[j]])
   v <- verdict_levels[x$verdict]
-  has_g <- abs(tr[["artefact"]]) > 1e-9
-  has_p <- abs(tr[["real"]]) > 1e-9
-  true_larger <- if (!has_g && !has_p) NA else if (abs(tr[["artefact"]]) > abs(tr[["real"]])) "guideline" else "period"
-  larger <- c("guideline", "period", "neither")[x$larger]
+  has_g <- abs(tr[["reclass"]]) > 1e-9
+  has_p <- abs(tr[["fixed"]]) > 1e-9
+  true_larger <- if (!has_g && !has_p) NA else if (abs(tr[["reclass"]]) > abs(tr[["fixed"]])) "reclassification" else "fixed criteria"
+  larger <- c("reclassification", "fixed criteria", "neither")[x$larger]
   wrong <- function(l) if (is.na(true_larger)) mean(l != "neither") else mean(l != true_larger & l != "neither")
   site <- if (cell$clustered) c(
-    cover_real_site = mean(x$real_low_site <= tr[["real"]] & tr[["real"]] <= x$real_high_site),
-    cover_artefact_site = mean(x$artefact_low_site <= tr[["artefact"]] & tr[["artefact"]] <= x$artefact_high_site),
-    period_shown_site = mean(verdict_levels[x$verdict_site] %in% c("period change", "both")),
-    larger_wrong_site = wrong(c("guideline", "period", "neither")[x$larger_site])) else
-    c(cover_real_site = NA, cover_artefact_site = NA, period_shown_site = NA, larger_wrong_site = NA)
-  data.frame(cell, true_real = tr[["real"]], true_artefact = tr[["artefact"]],
-             bias_real = mean(x$real) - tr[["real"]], bias_artefact = mean(x$artefact) - tr[["artefact"]],
-             cover_real = mean(x$real_low <= tr[["real"]] & tr[["real"]] <= x$real_high),
-             cover_artefact = mean(x$artefact_low <= tr[["artefact"]] & tr[["artefact"]] <= x$artefact_high),
+    cover_fixed_site = mean(x$fixed_low_site <= tr[["fixed"]] & tr[["fixed"]] <= x$fixed_high_site),
+    cover_reclass_site = mean(x$reclass_low_site <= tr[["reclass"]] & tr[["reclass"]] <= x$reclass_high_site),
+    fixed_shown_site = mean(verdict_levels[x$verdict_site] %in% c("change at fixed criteria", "both")),
+    larger_wrong_site = wrong(c("reclassification", "fixed criteria", "neither")[x$larger_site])) else
+    c(cover_fixed_site = NA, cover_reclass_site = NA, fixed_shown_site = NA, larger_wrong_site = NA)
+  data.frame(cell, true_fixed = tr[["fixed"]], true_reclass = tr[["reclass"]],
+             bias_fixed = mean(x$fixed) - tr[["fixed"]], bias_reclass = mean(x$reclass) - tr[["reclass"]],
+             cover_fixed = mean(x$fixed_low <= tr[["fixed"]] & tr[["fixed"]] <= x$fixed_high),
+             cover_reclass = mean(x$reclass_low <= tr[["reclass"]] & tr[["reclass"]] <= x$reclass_high),
              t(site), excluded = mean(x$excluded),
-             period_change = mean(v == "period change"), guideline_change = mean(v == "guideline change"),
-             both = mean(v == "both"), unresolved = mean(v == "unresolved"), noise = mean(v == "noise"),
-             guideline_shown = mean(v %in% c("guideline change", "both")),
-             period_shown = mean(v %in% c("period change", "both")),
+             fixed_change = mean(v == "change at fixed criteria"), reclassification = mean(v == "reclassification"),
+             both = mean(v == "both"), unattributed = mean(v == "unattributed"), no_change = mean(v == "no change detected"),
+             reclass_shown = mean(v %in% c("reclassification", "both")),
+             fixed_shown = mean(v %in% c("change at fixed criteria", "both")),
              larger_correct = if (is.na(true_larger)) NA else mean(larger == true_larger),
              larger_wrong = wrong(larger), not_interpretable = mean(v == "not interpretable"))
 }))
@@ -177,23 +177,23 @@ num <- vapply(out, is.numeric, logical(1))
 out[num] <- lapply(out[num], signif, 4)
 write.csv(out, "results/simulation.csv", row.names = FALSE)
 
-# ---- The base cell with the lowest period coverage, again with 600 new datasets -----------------
+# ---- The base cell with the lowest fixed-criteria coverage, again with 600 new datasets -----------------
 # With 156 cells, some fall a few Monte Carlo errors from 95% by chance; this checks the worst.
-worst <- which.min(ifelse(out$set == "base", out$cover_real, Inf))
+worst <- which.min(ifelse(out$set == "base", out$cover_fixed, Inf))
 recheck_runs <- do.call(rbind, mclapply(seq_len(600), function(k) {
   set.seed(90000 + k)
   one_run(grid[worst, ], B)
 }, mc.cores = cores))
 recheck <- data.frame(grid[worst, ], datasets = 600,
-                      cover_real = mean(recheck_runs[, "real_low"] <= out$true_real[worst] & out$true_real[worst] <= recheck_runs[, "real_high"]),
-                      period_shown = mean(verdict_levels[recheck_runs[, "verdict"]] %in% c("period change", "both")))
+                      cover_fixed = mean(recheck_runs[, "fixed_low"] <= out$true_fixed[worst] & out$true_fixed[worst] <= recheck_runs[, "fixed_high"]),
+                      fixed_shown = mean(verdict_levels[recheck_runs[, "verdict"]] %in% c("change at fixed criteria", "both")))
 write.csv(recheck, "results/simulation_recheck.csv", row.names = FALSE)
 
 # ---- Several pairs in one dataset, Benjamini-Hochberg over them ------------------------------------
 # 2022 against 2023: gentamicin (revised, shift 1) and piperacillin/tazobactam (unchanged between
 # these editions) for each of 10 Enterobacterales species, n = 1,000 per period and pair, resistant
-# share 20%; half the species get a period change of +5 points in both drugs. The true guideline
-# component is 0 for every piperacillin/tazobactam pair, and the period component 0 for half.
+# share 20%; half the species get a change at fixed criteria of +5 points in both drugs. True
+# reclassification is 0 for every piperacillin/tazobactam pair, and the change at fixed criteria 0 for half.
 species <- as.character(AMR::as.mo(c("Escherichia coli", "Klebsiella pneumoniae", "Klebsiella oxytoca",
                                      "Enterobacter cloacae", "Proteus mirabilis", "Citrobacter freundii",
                                      "Serratia marcescens", "Klebsiella aerogenes", "Morganella morganii",
@@ -207,24 +207,24 @@ multi_run <- function(B) {
   }))))
   data$isolate <- seq_len(nrow(data))
   t <- drift_test(drift_bootstrap(data, B = B))
-  t$true_period <- t$mo %in% species[1:5]
-  t$true_guideline <- t$ab == "GEN"
-  t[c("mo", "ab", "verdict", "true_period", "true_guideline")]
+  t$true_fixed <- t$mo %in% species[1:5]
+  t$true_reclass <- t$ab == "GEN"
+  t[c("mo", "ab", "verdict", "true_fixed", "true_reclass")]
 }
 multi <- mclapply(seq_len(reps), function(k) {
   set.seed(4026 + k)
   cbind(dataset = k, multi_run(B))
 }, mc.cores = cores, mc.preschedule = FALSE)
 multi <- do.call(rbind, multi)
-g_shown <- multi$verdict %in% c("guideline change", "both")
-p_shown <- multi$verdict %in% c("period change", "both")
+r_shown <- multi$verdict %in% c("reclassification", "both")
+f_shown <- multi$verdict %in% c("change at fixed criteria", "both")
 fdr <- function(shown, true) mean(tapply(shown & !true, multi$dataset, sum) / pmax(1, tapply(shown, multi$dataset, sum)))
 multi_summary <- data.frame(
-  measure = c("guideline shown, revised pairs", "guideline shown, unrevised pairs", "period shown, +5 points",
-              "period shown, no period change", "false discovery rate, guideline", "false discovery rate, period",
+  measure = c("reclassification shown, revised pairs", "reclassification shown, unrevised pairs", "fixed criteria shown, +5 points",
+              "fixed criteria shown, no change at fixed criteria", "false discovery rate, reclassification", "false discovery rate, fixed criteria",
               "pairs not interpretable"),
-  value = c(mean(g_shown[multi$true_guideline]), mean(g_shown[!multi$true_guideline]), mean(p_shown[multi$true_period]),
-            mean(p_shown[!multi$true_period]), fdr(g_shown, multi$true_guideline), fdr(p_shown, multi$true_period),
+  value = c(mean(r_shown[multi$true_reclass]), mean(r_shown[!multi$true_reclass]), mean(f_shown[multi$true_fixed]),
+            mean(f_shown[!multi$true_fixed]), fdr(r_shown, multi$true_reclass), fdr(f_shown, multi$true_fixed),
             mean(multi$verdict == "not interpretable")))
 
 # ---- The MIC-shift model --------------------------------------------------------------------------
@@ -269,57 +269,57 @@ lines <- c(
   "cells with that n; per-cell results, with the true components, are in simulation.csv.", "",
   "## %R, base cells", "",
   "| | n = 200 | n = 1000 | n = 5000 |", "|---|--:|--:|--:|",
-  row("Bias, period, largest absolute", points("bias_real", function(v) max(abs(v))), b),
-  row("Bias, guideline, largest absolute", points("bias_artefact", function(v) max(abs(v))), b),
-  row("Coverage, period, no capping", range_pct("cover_real"), uncapped),
-  row("Coverage, period, 30% capped", range_pct("cover_real"), capped),
-  row("Coverage, guideline, shift > 0, no capping", range_pct("cover_artefact"), uncapped & out$shift > 0),
-  row("Coverage, guideline, shift > 0, 30% capped", range_pct("cover_artefact"), capped),
-  row("Period shown, no period change", range_pct("period_shown"), b & out$delta == 0),
-  row("Period shown, period change", range_pct("period_shown"), b & out$delta > 0),
-  row("Guideline shown, shift 0", range_pct("guideline_shown"), b & out$shift == 0),
-  row("Guideline shown, shift > 0", range_pct("guideline_shown"), b & out$shift > 0),
-  row("Larger named correctly, shift > 0 and period change", range_pct("larger_correct"), b & out$shift > 0 & out$delta > 0),
+  row("Bias, fixed criteria, largest absolute", points("bias_fixed", function(v) max(abs(v))), b),
+  row("Bias, reclassification, largest absolute", points("bias_reclass", function(v) max(abs(v))), b),
+  row("Coverage, fixed criteria, no capping", range_pct("cover_fixed"), uncapped),
+  row("Coverage, fixed criteria, 30% capped", range_pct("cover_fixed"), capped),
+  row("Coverage, reclassification, shift > 0, no capping", range_pct("cover_reclass"), uncapped & out$shift > 0),
+  row("Coverage, reclassification, shift > 0, 30% capped", range_pct("cover_reclass"), capped),
+  row("Fixed criteria shown, no change at fixed criteria", range_pct("fixed_shown"), b & out$delta == 0),
+  row("Fixed criteria shown, change at fixed criteria", range_pct("fixed_shown"), b & out$delta > 0),
+  row("Reclassification shown, shift 0", range_pct("reclass_shown"), b & out$shift == 0),
+  row("Reclassification shown, shift > 0", range_pct("reclass_shown"), b & out$shift > 0),
+  row("Larger named correctly, shift > 0 and change at fixed criteria", range_pct("larger_correct"), b & out$shift > 0 & out$delta > 0),
   row("Larger named wrongly, any cell", range_pct("larger_wrong"), b),
   row("Values excluded, 30% capped", range_pct("excluded"), capped),
   "",
   "## Other cells", "",
   "| | n = 200 | n = 1000 | n = 5000 |", "|---|--:|--:|--:|",
-  row("NS, bias of guideline, no capping", points("bias_artefact", function(v) max(abs(v))), out$set == "NS" & out$capped == 0),
-  row("NS, bias of guideline, 30% capped (mean)", points("bias_artefact", d = 1), out$set == "NS" & out$capped > 0),
-  row("NS, coverage of guideline, 30% capped", range_pct("cover_artefact"), out$set == "NS" & out$capped > 0),
+  row("NS, bias of reclassification, no capping", points("bias_reclass", function(v) max(abs(v))), out$set == "NS" & out$capped == 0),
+  row("NS, bias of reclassification, 30% capped (mean)", points("bias_reclass", d = 1), out$set == "NS" & out$capped > 0),
+  row("NS, coverage of reclassification, 30% capped", range_pct("cover_reclass"), out$set == "NS" & out$capped > 0),
   row("NS, values excluded, 30% capped", range_pct("excluded"), out$set == "NS" & out$capped > 0),
-  row("Near, coverage of period", range_pct("cover_real"), out$set == "near"),
-  row("Near, coverage of guideline, shift > 0", range_pct("cover_artefact"), out$set == "near" & out$shift > 0),
-  row("Near, guideline shown, shift > 0", range_pct("guideline_shown"), out$set == "near" & out$shift > 0),
-  row("Reported, compliant, coverage of guideline, shift > 0", range_pct("cover_artefact"), out$reported == "compliant" & out$shift > 0),
-  row("Reported, compliant, guideline shown, shift 0", range_pct("guideline_shown"), out$reported == "compliant" & out$shift == 0),
-  row("Reported, own rule, coverage of guideline", range_pct("cover_artefact"), out$reported == "own rule"),
-  row("Reported, own rule, guideline shown", range_pct("guideline_shown"), out$reported == "own rule"),
-  row("Clustered, coverage of period, isolate bootstrap", range_pct("cover_real"), out$set == "clustered"),
-  row("Clustered, coverage of period, site bootstrap", range_pct("cover_real_site"), out$set == "clustered"),
-  row("Clustered, period shown, no period change, isolate bootstrap", range_pct("period_shown"), out$set == "clustered" & out$delta == 0),
-  row("Clustered, period shown, no period change, site bootstrap", range_pct("period_shown_site"), out$set == "clustered" & out$delta == 0),
-  row("Clustered, coverage of guideline, shift 1, isolate bootstrap", range_pct("cover_artefact"), out$set == "clustered" & out$shift == 1),
-  row("Clustered, coverage of guideline, shift 1, site bootstrap", range_pct("cover_artefact_site"), out$set == "clustered" & out$shift == 1),
+  row("Near, coverage of fixed criteria", range_pct("cover_fixed"), out$set == "near"),
+  row("Near, coverage of reclassification, shift > 0", range_pct("cover_reclass"), out$set == "near" & out$shift > 0),
+  row("Near, reclassification shown, shift > 0", range_pct("reclass_shown"), out$set == "near" & out$shift > 0),
+  row("Reported, compliant, coverage of reclassification, shift > 0", range_pct("cover_reclass"), out$reported == "compliant" & out$shift > 0),
+  row("Reported, compliant, reclassification shown, shift 0", range_pct("reclass_shown"), out$reported == "compliant" & out$shift == 0),
+  row("Reported, own rule, coverage of reclassification", range_pct("cover_reclass"), out$reported == "own rule"),
+  row("Reported, own rule, reclassification shown", range_pct("reclass_shown"), out$reported == "own rule"),
+  row("Clustered, coverage of fixed criteria, isolate bootstrap", range_pct("cover_fixed"), out$set == "clustered"),
+  row("Clustered, coverage of fixed criteria, site bootstrap", range_pct("cover_fixed_site"), out$set == "clustered"),
+  row("Clustered, fixed criteria shown, no change at fixed criteria, isolate bootstrap", range_pct("fixed_shown"), out$set == "clustered" & out$delta == 0),
+  row("Clustered, fixed criteria shown, no change at fixed criteria, site bootstrap", range_pct("fixed_shown_site"), out$set == "clustered" & out$delta == 0),
+  row("Clustered, coverage of reclassification, shift 1, isolate bootstrap", range_pct("cover_reclass"), out$set == "clustered" & out$shift == 1),
+  row("Clustered, coverage of reclassification, shift 1, site bootstrap", range_pct("cover_reclass_site"), out$set == "clustered" & out$shift == 1),
   row("Clustered, larger named wrongly, isolate bootstrap", range_pct("larger_wrong"), out$set == "clustered"),
   row("Clustered, larger named wrongly, site bootstrap", range_pct("larger_wrong_site"), out$set == "clustered"),
-  row("Low, coverage of period", range_pct("cover_real"), out$set == "low"),
-  row("Low, coverage of guideline, shift 1", range_pct("cover_artefact"), out$set == "low" & out$shift == 1),
-  row("Low, period shown, no period change", range_pct("period_shown"), out$set == "low" & out$delta == 0),
-  row("Low, period shown, +1 point", range_pct("period_shown"), out$set == "low" & out$delta > 0),
-  row("Low, guideline shown, shift 0", range_pct("guideline_shown"), out$set == "low" & out$shift == 0),
-  row("Low, guideline shown, shift 1", range_pct("guideline_shown"), out$set == "low" & out$shift == 1),
+  row("Low, coverage of fixed criteria", range_pct("cover_fixed"), out$set == "low"),
+  row("Low, coverage of reclassification, shift 1", range_pct("cover_reclass"), out$set == "low" & out$shift == 1),
+  row("Low, fixed criteria shown, no change at fixed criteria", range_pct("fixed_shown"), out$set == "low" & out$delta == 0),
+  row("Low, fixed criteria shown, +1 point", range_pct("fixed_shown"), out$set == "low" & out$delta > 0),
+  row("Low, reclassification shown, shift 0", range_pct("reclass_shown"), out$set == "low" & out$shift == 0),
+  row("Low, reclassification shown, shift 1", range_pct("reclass_shown"), out$set == "low" & out$shift == 1),
   row("Low, larger named wrongly", range_pct("larger_wrong"), out$set == "low"),
   row("Straddle, not interpretable", range_pct("not_interpretable"), out$set == "straddle"),
   "",
-  sprintf(paste("True components: period %s points with a period change (base cells); guideline %s points (shift 1)",
-                "and %s (shift 2); reported own-rule guideline %s."),
-          rng(out$true_real[b & out$delta > 0]), rng(out$true_artefact[b & out$shift == 1]),
-          rng(out$true_artefact[b & out$shift == 2]), rng(out$true_artefact[out$reported == "own rule"])),
+  sprintf(paste("True components: fixed criteria %s points with a change at fixed criteria (base cells); reclassification %s points (shift 1)",
+                "and %s (shift 2); reported own-rule reclassification %s."),
+          rng(out$true_fixed[b & out$delta > 0]), rng(out$true_reclass[b & out$shift == 1]),
+          rng(out$true_reclass[b & out$shift == 2]), rng(out$true_reclass[out$reported == "own rule"])),
   "",
-  sprintf("Base cell with the lowest period coverage (n = %d, prev %.2f, shift %d, delta %.2f, capped %.1f), rerun with 600 new datasets: coverage %s, period shown %s.",
-          recheck$n, recheck$prev, recheck$shift, recheck$delta, recheck$capped, pct(recheck$cover_real), pct(recheck$period_shown)),
+  sprintf("Base cell with the lowest fixed-criteria coverage (n = %d, prev %.2f, shift %d, delta %.2f, capped %.1f), rerun with 600 new datasets: coverage %s, fixed criteria shown %s.",
+          recheck$n, recheck$prev, recheck$shift, recheck$delta, recheck$capped, pct(recheck$cover_fixed), pct(recheck$fixed_shown)),
   "",
   "## Twenty pairs per dataset, Benjamini-Hochberg over them", "",
   "| | % |", "|---|--:|",

@@ -19,7 +19,7 @@
 # Four results:
 #   1. NARMS's own relabelling: up to 2022 NARMS called a Salmonella ciprofloxacin MIC of 0.12
 #      or more R; from 2023 it uses CLSI (0.12-0.5 is I). Each drug's reported %R in 2022 and
-#      2023 is split into real change (both years read with CLSI 2023) and artefact.
+#      2023 is split into change at fixed criteria (both years read with CLSI 2023) and reclassification.
 #   2. The tool's own decomposition, CLSI 2020 against CLSI 2023, on cecal isolates.
 #   3. Agreement of the tool's reading with NARMS's calls, by drug and year.
 #   4. The MIC shift on retail isolates over 20 years, which needs no breakpoint at all.
@@ -146,8 +146,8 @@ agreement$agree_pct <- ifelse(agreement$tests > 0, 100 * agreement$agree / agree
 write.csv(round_numbers(agreement), "results/narms_agreement.csv", row.names = FALSE)
 
 # ---- 1. NARMS's own relabelling, 2022 to 2023 (cecal) --------------------------------------------
-# Observed: %R as NARMS reported it each year. Period component: the MICs, read with CLSI 2022 and
-# CLSI 2023 (Shapley mean of holding either). The guideline component is everything else: NARMS's
+# Observed: %R as NARMS reported it each year. Change at fixed criteria: the MICs, read with CLSI 2022
+# and CLSI 2023 (Shapley mean of holding either). Reclassification is everything else: NARMS's
 # own rules and the CLSI revisions. Pairs need 10 NARMS calls in each year (a working minimum). NARMS cecal calls through 2022 treat a Salmonella or E. coli ciprofloxacin MIC
 # of 0.12 or more as R; in 2023 they follow CLSI, except that they keep the gentamicin breakpoint
 # CLSI cut in 2023 (the agreement table shows both).
@@ -192,7 +192,7 @@ windows <- do.call(rbind, lapply(window_runs, function(w) {
   counts <- table(factor(t$verdict, verdict_levels))
   key <- t[t$ab %in% if (w[[1]] == "relabel") "CIP" else "GEN", ]
   cbind(comparison = w[[1]], key[c("year_from", "year_to", "guideline_from", "guideline_to", "mo", "ab", "observed",
-                                   "real", "real_low", "real_high", "artefact", "artefact_low", "artefact_high", "verdict")],
+                                   "fixed", "fixed_low", "fixed_high", "reclass", "reclass_low", "reclass_high", "verdict")],
         t(as.matrix(counts)), pairs = nrow(t))
 }))
 write.csv(round_numbers(windows), "results/narms_windows.csv", row.names = FALSE)
@@ -200,7 +200,7 @@ write.csv(round_numbers(windows), "results/narms_windows.csv", row.names = FALSE
 # ---- 2c. The generic Gram-negative fallback, if it were not dropped ------------------------------
 # Cecal 2018-2019 read with CLSI 2019 against 2022-2023 read with CLSI 2023, with AMR's readings
 # as they are (no fallback filter), and the same comparison with CLSI 2020, which has the
-# Enterobacterales rows, as the older edition. The difference is the false guideline component
+# Enterobacterales rows, as the older edition. The difference is the false reclassification
 # the missing rows would produce.
 read_sir_filtered <- read_sir
 read_sir <- function(x, guideline) {
@@ -216,11 +216,11 @@ filtered <- drift_decompose(cecal, from = 2018:2019, to = 2022:2023)
 with_2020 <- drift_decompose(cecal, from = 2018:2019, to = 2022:2023,
                              in_force = function(y, o) if (y == 2019) "CLSI 2020" else guideline_in_force(y, o))
 fallback_check <- data.frame(unfiltered[c("mo", "ab")], n = unfiltered$n_y1g1,
-                             artefact_clsi2019_unfiltered = unfiltered$artefact,
-                             interpretable_clsi2019_filtered = !is.na(filtered$real),
-                             artefact_clsi2020 = with_2020$artefact[match(paste(unfiltered$mo, unfiltered$ab), paste(with_2020$mo, with_2020$ab))])
-fallback_check$false_part <- fallback_check$artefact_clsi2019_unfiltered - fallback_check$artefact_clsi2020
-fallback_check <- fallback_check[fallback_check$n >= 10 & !is.na(fallback_check$artefact_clsi2019_unfiltered), ]
+                             reclass_clsi2019_unfiltered = unfiltered$reclass,
+                             interpretable_clsi2019_filtered = !is.na(filtered$fixed),
+                             reclass_clsi2020 = with_2020$reclass[match(paste(unfiltered$mo, unfiltered$ab), paste(with_2020$mo, with_2020$ab))])
+fallback_check$false_part <- fallback_check$reclass_clsi2019_unfiltered - fallback_check$reclass_clsi2020
+fallback_check <- fallback_check[fallback_check$n >= 10 & !is.na(fallback_check$reclass_clsi2019_unfiltered), ]
 write.csv(round_numbers(fallback_check), "results/narms_fallback_check.csv", row.names = FALSE)
 
 # ---- 4. Twenty years of MIC shift (retail) -------------------------------------------------------
@@ -294,12 +294,6 @@ ci <- function(est, lo, hi) ifelse(!is.na(lo) & est == 0 & lo == 0 & hi == 0, "0
                                    ifelse(is.na(lo), pp(est), sprintf("%s (%s to %s)", pp(est), pp(lo), pp(hi))))
 pval <- function(p) ifelse(is.na(p), "", ifelse(p < 0.001, "$<$0.001", sprintf("%.3f", p)))
 org <- function(mo) ifelse(mo == "B_SLMNL_ENTR", "\\textit{Salmonella}", "\\textit{E.~coli}")
-# The paper's terms for the software's labels: the guideline component is the criteria component,
-# the period component the fixed-criteria component
-term <- function(v) unname(c(`guideline change` = "criteria change", `period change` = "fixed-criteria change",
-                             both = "both", unresolved = "change not attributed", noise = "no change detected",
-                             `not interpretable` = "not interpretable", guideline = "criteria", period = "fixed criteria",
-                             neither = "neither")[v])
 # A long table breaks across pages (longtable, caption on top, header repeated)
 table_tex <- function(spec, header, rows, caption, long = FALSE) {
   if (long) return(c("\\clearpage", "{\\scriptsize", paste0("\\begin{longtable}{", spec, "}"), paste0("\\caption{", caption, "}\\\\"),
@@ -316,30 +310,30 @@ supplement <- function(x, caption) {
   n2 <- if (rep) x$n_rep_y2 else x$n_y2g2
   rows <- sprintf("%s & %s & %d & %d & %s & %s & %s & %s & %s & %s & %s & %s & %s & %s & %s \\\\", org(x$mo),
                   AMR::ab_name(x$ab, info = FALSE), n1, n2, pct(p1), pct(p2), pp(x$observed),
-                  ci(x$real, x$real_low, x$real_high), ci(x$artefact, x$artefact_low, x$artefact_high),
-                  pval(x$p_observed), pval(x$p_real), pval(x$p_artefact), pval(x$p_larger), term(x$verdict),
-                  ifelse(is.na(x$larger), "", term(x$larger)))
+                  ci(x$fixed, x$fixed_low, x$fixed_high), ci(x$reclass, x$reclass_low, x$reclass_high),
+                  pval(x$p_observed), pval(x$p_fixed), pval(x$p_reclass), pval(x$p_larger), x$verdict,
+                  ifelse(is.na(x$larger), "", x$larger))
   table_tex("llrrrrrllrrrrll",
-            "Organism & Drug & n before & n after & Before & After & Observed & Fixed criteria (95\\% CI) & Criteria (95\\% CI) & $p$ obs. & $p$ fixed & $p$ criteria & $p$ larger & Verdict & Larger \\\\",
+            "Organism & Drug & n before & n after & Before & After & Observed & Fixed criteria & Reclassification & $p$ obs. & $p$ fixed & $p$ reclass. & $p$ larger & Verdict & Larger \\\\",
             rows, caption)
 }
 columns <- paste(
   "n: isolates read (or reported) in each period. Before, After: shares in percent; Observed and the components in",
   "percentage points, with percentile intervals from 5,000 bootstrap replicates over isolates (not adjusted); 0: zero",
-  "in every replicate. $p$ obs.: Fisher's exact test of the observed change; $p$ fixed, $p$ criteria: bootstrap tests",
-  "of the components; $p$ larger: bootstrap test of |criteria| $-$ |fixed criteria|; each column Benjamini-Hochberg",
+  "in every replicate. $p$ obs.: Fisher's exact test of the observed change; $p$ fixed, $p$ reclass.: bootstrap tests",
+  "of the components; $p$ larger: bootstrap test of |reclassification| $-$ |fixed criteria|; each column Benjamini-Hochberg",
   "corrected over the interpretable pairs of this table. A component is detected when its corrected $p$ is below 0.05",
   "and it is at least one point; Verdict says which components are detected, Larger which is larger where that test",
   "is significant and that component is detected. Pairs without a breakpoint are not interpretable.")
 writeLines(c(
-  supplement(relabel, paste("Cecal isolates, 2022 against 2023, \\%R as reported by NARMS. Fixed-criteria component from MICs read",
-                            "with CLSI 2022 and CLSI 2023; criteria component: the rest of the observed change.", columns)),
+  supplement(relabel, paste("Cecal isolates, 2022 against 2023, \\%R as reported by NARMS. Change at fixed criteria from MICs read",
+                            "with CLSI 2022 and CLSI 2023; reclassification: the rest of the observed change.", columns)),
   supplement(relabel_ns, paste("Cecal isolates, 2022 against 2023, share non-susceptible (I or R) as reported by NARMS.",
-                               "Fixed-criteria component from MICs read with CLSI 2022 and CLSI 2023; criteria component: the",
+                               "Change at fixed criteria from MICs read with CLSI 2022 and CLSI 2023; reclassification: the",
                                "rest of the observed change.", columns)),
   supplement(editions, paste("Cecal isolates, 2019-2020 read with CLSI 2020 against 2022-2023 read with CLSI 2023, \\%R.",
-                             "Fixed-criteria component: the change with one edition applied to both periods; criteria",
-                             "component: the rest.", columns))),
+                             "Change at fixed criteria: the change with one edition applied to both periods;",
+                             "reclassification: the rest.", columns))),
   "results/supplement_tables.tex")
 
 # ---- 6. Wild-type cut-offs (ECOFF) ---------------------------------------------------------------
@@ -373,7 +367,7 @@ ecoff <- do.call(rbind, lapply(list(list("B_SLMNL_ENTR", "CIP", 2022, 2023), lis
 write.csv(round_numbers(ecoff), "results/narms_ecoff.csv", row.names = FALSE)
 
 # ---- 6b. Gentamicin MIC distributions (cecal), for the figure ----------------------------------
-# The guideline component of Table S3 made visible: the same MICs, the CLSI 2020 R breakpoint
+# The reclassification of Table S3 made visible: the same MICs, the CLSI 2020 R breakpoint
 # (>= 16), the CLSI 2023 one (>= 8) and the ECOFF (2 mg/L). Share of isolates at each stored value.
 gen <- long[long$source == "cecal" & long$ab == "GEN" & long$year %in% c(2019:2020, 2022:2023), ]
 gen$period <- ifelse(gen$year <= 2020, "2019-2020", "2022-2023")
@@ -463,6 +457,16 @@ crude <- c(100 * mean(ns$hit[ns$year == 2022]), 100 * mean(ns$hit[ns$year == 202
 standardised <- rbind(data.frame(by = "crude", pct_2022 = crude[1], pct_2023 = crude[2], change = diff(crude),
                                  change_low = NA, change_high = NA, share_in_common_strata = 1), standardised)
 write.csv(round_numbers(standardised), "results/narms_standardised.csv", row.names = FALSE)
+
+# The same isolates by host: %R as NARMS called it, %NS under CLSI 2023, and %NS of Infantis and
+# of the other serotypes within the host (pooling hosts mixes these two changes).
+by_host <- do.call(rbind, lapply(c(sort(unique(ns$host)), "All"), function(h) do.call(rbind, lapply(2022:2023, function(y) {
+  x <- ns[(h == "All" | ns$host == h) & ns$year == y, ]
+  inf <- x$serotype == "Infantis"
+  data.frame(host = h, year = y, n = nrow(x), reported_r = 100 * mean(x$narms %in% "R"), ns = 100 * mean(x$hit),
+             infantis_n = sum(inf), infantis_ns = 100 * mean(x$hit[inf]), other_ns = 100 * mean(x$hit[!inf]))
+}))))
+write.csv(round_numbers(by_host), "results/narms_by_host.csv", row.names = FALSE)
 
 # ---- 8. Isolate flow and drugs -------------------------------------------------------------------
 # Per file and year: sample records in the extract (Salmonella and E. coli sought), those with no
@@ -619,8 +623,8 @@ set.seed(2026)
 relabel_cl <- drift_bootstrap(relabel_data, from = 2022, to = 2023, B = 5000, cluster = "batch")
 editions_cl <- drift_bootstrap(cecal, from = 2019:2020, to = 2022:2023, B = 5000, cluster = "batch")
 cluster_table <- function(iso, cl, comparison) {
-  m <- merge(iso[!is.na(iso$real), c("mo", "ab", "real", "real_low", "real_high", "artefact", "artefact_low", "artefact_high", "verdict")],
-             cl[c("mo", "ab", "real_low", "real_high", "artefact_low", "artefact_high", "boot_p_real", "units_y1", "units_y2")],
+  m <- merge(iso[!is.na(iso$fixed), c("mo", "ab", "fixed", "fixed_low", "fixed_high", "reclass", "reclass_low", "reclass_high", "verdict")],
+             cl[c("mo", "ab", "fixed_low", "fixed_high", "reclass_low", "reclass_high", "boot_p_fixed", "units_y1", "units_y2")],
              by = c("mo", "ab"), suffixes = c("", "_month"))
   cbind(comparison = comparison, m)
 }
@@ -629,8 +633,8 @@ clustering <- rbind(cluster_table(relabel, relabel_cl, "2022 v 2023"),
 names(clustering)[names(clustering) %in% c("units_y1", "units_y2")] <- c("months_y1", "months_y2")
 write.csv(round_numbers(clustering), "results/narms_cluster.csv", row.names = FALSE)
 widen <- function(lo, hi, lo2, hi2) ifelse(hi - lo > 0, (hi2 - lo2) / (hi - lo), NA)
-clustering$ratio_real <- widen(clustering$real_low, clustering$real_high, clustering$real_low_month, clustering$real_high_month)
-clustering$ratio_artefact <- widen(clustering$artefact_low, clustering$artefact_high, clustering$artefact_low_month, clustering$artefact_high_month)
+clustering$ratio_fixed <- widen(clustering$fixed_low, clustering$fixed_high, clustering$fixed_low_month, clustering$fixed_high_month)
+clustering$ratio_reclass <- widen(clustering$reclass_low, clustering$reclass_high, clustering$reclass_low_month, clustering$reclass_high_month)
 excl0 <- function(lo, hi) !is.na(lo) & (lo > 0 | hi < 0)
 
 shift_data <- function(d, from, to) {
@@ -673,13 +677,13 @@ write.csv(round_numbers(est[c("mo", "ab", "shift", "shift_low", "shift_high", "s
 
 ci1 <- function(lo, hi) ifelse(is.na(lo), "", ifelse(lo == 0 & hi == 0, "0", sprintf("%s to %s", pp(lo), pp(hi))))
 rows <- with(clustering, sprintf("%s & %s & %s & %s & %s & %s & %s & %s & %s & %d / %d \\\\", comparison, org(mo),
-                                 AMR::ab_name(ab, info = FALSE), pp(real), ci1(real_low, real_high),
-                                 ci1(real_low_month, real_high_month), pp(artefact), ci1(artefact_low, artefact_high),
-                                 ci1(artefact_low_month, artefact_high_month), months_y1, months_y2))
+                                 AMR::ab_name(ab, info = FALSE), pp(fixed), ci1(fixed_low, fixed_high),
+                                 ci1(fixed_low_month, fixed_high_month), pp(reclass), ci1(reclass_low, reclass_high),
+                                 ci1(reclass_low_month, reclass_high_month), months_y1, months_y2))
 cat(table_tex("lllrllrllr",
-      "Comparison & Organism & Drug & Fixed criteria & Isolates & Months & Criteria & Isolates & Months & Months (G) \\\\",
+      "Comparison & Organism & Drug & Fixed criteria & Isolates & Months & Reclassification & Isolates & Months & Months (G) \\\\",
       rows,
-      paste("Cluster sensitivity, cecal isolates, comparisons of Tables S1 and S3. Fixed-criteria and criteria components (percentage points) with",
+      paste("Cluster sensitivity, cecal isolates, comparisons of Tables S1 and S3. Change at fixed criteria and reclassification (percentage points) with",
             "95\\% bootstrap intervals that resample isolates (as in Tables S1 and S3) or whole collection months",
             "(G $-$ 1 of the G months of each period per replicate), 5,000 replicates each. G: months per period.",
             "Interpretable pairs only."), long = TRUE), file = "results/supplement_tables.tex", sep = "\n", append = TRUE)
@@ -736,31 +740,31 @@ cat(c("\\begin{table}[h]", "\\centering", "\\scriptsize", "\\begin{tabular}{lllr
 # ---- 12. Further supplementary tables (S9-S12) and the numbers quoted in the text --------------
 extra <- character(0)
 orderings <- function(x, comparison) {
-  x <- x[!is.na(x$real), ]
+  x <- x[!is.na(x$fixed), ]
   rep <- !is.null(x$p_rep_y1)
-  # Equation 2: the guideline component as the revision term plus the two reporting gaps
-  revision <- x$p_y2g2 - x$p_y1g1 - x$real
+  # Equation 2: reclassification as the revision term plus the two reporting gaps
+  revision <- x$p_y2g2 - x$p_y1g1 - x$fixed
   gap1 <- if (rep) x$p_rep_y1 - x$p_y1g1 else NA
   gap2 <- if (rep) x$p_rep_y2 - x$p_y2g2 else NA
   sprintf("%s & %s & %s & %s & %s & %s & %s & %s & %s & %s \\\\", comparison, org(x$mo), AMR::ab_name(x$ab, info = FALSE),
-          pp(x$real_at_new), pp(x$real_at_old), pp(x$interaction), pp(x$artefact), pp(revision),
+          pp(x$fixed_at_new), pp(x$fixed_at_old), pp(x$interaction), pp(x$reclass), pp(revision),
           if (rep) pp(gap1) else "", if (rep) pp(gap2) else "")
 }
 extra <- c(extra, table_tex("lllrrrrrrr",
-  "Comparison & Organism & Drug & Fixed at $g_2$ & Fixed at $g_1$ & Interaction & Criteria & Revision & Gap before & Gap after \\\\",
+  "Comparison & Organism & Drug & Fixed at $g_2$ & Fixed at $g_1$ & Interaction & Reclassification & Revision & Gap before & Gap after \\\\",
   c(orderings(relabel, "S1"), orderings(relabel_ns, "S2"), orderings(editions, "S3")),
-  paste("Comparisons of Tables S1-S3, interpretable pairs. The two orderings of the fixed-criteria component, $p(y_2, g_2) - p(y_1, g_2)$ and $p(y_2, g_1) - p(y_1, g_1)$,",
+  paste("Comparisons of Tables S1-S3, interpretable pairs. The two orderings of the change at fixed criteria, $p(y_2, g_2) - p(y_1, g_2)$ and $p(y_2, g_1) - p(y_1, g_1)$,",
         "their difference (the interaction, which the Shapley mean splits equally by convention), and the",
-        "criteria component. For reported calls (S1, S2) the criteria component is split as in Equation 2 of the main text:",
-        "Revision, $p(y_2, g_2) - p(y_1, g_1) -$ fixed-criteria component; Gap before and after, $r(y) - p(y, g)$, the reported",
-        "share minus the tool's reading, so criteria = revision + gap after $-$ gap before. Percentage points."), long = TRUE))
+        "reclassification. For reported calls (S1, S2) reclassification is split as in Equation 2 of the main text:",
+        "Revision, $p(y_2, g_2) - p(y_1, g_1) -$ change at fixed criteria; Gap before and after, $r(y) - p(y, g)$, the reported",
+        "share minus the tool's reading, so reclassification = revision + gap after $-$ gap before. Percentage points."), long = TRUE))
 w <- windows
 extra <- c(extra, table_tex("llllllrlll",
-  "Comparison & Before & After & Organism & Drug & Editions & Observed & Fixed criteria (95\\% CI) & Criteria (95\\% CI) & Verdict \\\\",
+  "Comparison & Before & After & Organism & Drug & Editions & Observed & Fixed criteria (95\\% CI) & Reclassification (95\\% CI) & Verdict \\\\",
   sprintf("%s & %s & %s & %s & %s & %s & %s & %s & %s & %s \\\\", ifelse(w$comparison == "relabel", "Reported", "Editions"),
           w$year_from, w$year_to, org(w$mo), AMR::ab_name(w$ab, info = FALSE),
           paste(sub("CLSI ", "", w$guideline_from), "/", sub("CLSI ", "", w$guideline_to)), pp(w$observed),
-          ci(w$real, w$real_low, w$real_high), ci(w$artefact, w$artefact_low, w$artefact_high), term(w$verdict)),
+          ci(w$fixed, w$fixed_low, w$fixed_high), ci(w$reclass, w$reclass_low, w$reclass_high), w$verdict),
   paste("Sensitivity to the choice of windows, cecal isolates. Reported: \\%R as reported by NARMS (as Table S1),",
         "ciprofloxacin; Editions: each period read with the CLSI edition in force in its last year (as Table S3),",
         "gentamicin. Bootstrap intervals and tests, 2,000 replicates; verdicts with the correction over all",
@@ -768,11 +772,11 @@ extra <- c(extra, table_tex("llllllrlll",
         "its own 2,000 replicates, so its intervals can differ from the main text by a tenth of a point.")))
 f <- fallback_check
 extra <- c(extra, table_tex("llrrrl",
-  "Organism & Drug & n & Criteria, CLSI 2019 unfiltered & Criteria, CLSI 2020 as older edition & Interpretable with filter \\\\",
+  "Organism & Drug & n & Reclassification, CLSI 2019 unfiltered & Reclassification, CLSI 2020 as older edition & Interpretable with filter \\\\",
   sprintf("%s & %s & %s & %s & %s & %s \\\\", org(f$mo), AMR::ab_name(f$ab, info = FALSE), format(f$n, big.mark = ","),
-          pp(f$artefact_clsi2019_unfiltered), pp(f$artefact_clsi2020), ifelse(f$interpretable_clsi2019_filtered, "yes", "no")),
-  paste("The generic Gram-negative fallback, cecal isolates 2018-2019 against 2022-2023 (CLSI 2023). Criteria",
-        "component (percentage points) with the older period read under CLSI 2019 as AMR 3.1.0 reads it, without",
+          pp(f$reclass_clsi2019_unfiltered), pp(f$reclass_clsi2020), ifelse(f$interpretable_clsi2019_filtered, "yes", "no")),
+  paste("The generic Gram-negative fallback, cecal isolates 2018-2019 against 2022-2023 (CLSI 2023).",
+        "Reclassification (percentage points) with the older period read under CLSI 2019 as AMR 3.1.0 reads it, without",
         "the fallback filter, and with CLSI 2020, which has the Enterobacterales rows, as the older edition. n:",
         "isolates tested in 2018-2019. Last column: whether the pair is interpretable under CLSI 2019 with the",
         "filter the tool applies.")))
@@ -786,6 +790,19 @@ extra <- c(extra, table_tex("lrrrl",
   paste("Cecal \\textit{Salmonella} ciprofloxacin, share non-susceptible under CLSI 2023, 2022 and 2023, directly",
         "standardised to the pooled mix of both years over the strata present in both years. Serotypes with under",
         "20 isolates pooled as Other. Bootstrap intervals, isolates resampled within year, 2,000 replicates.")))
+bh <- merge(by_host[by_host$year == 2022, ], by_host[by_host$year == 2023, ], by = "host", suffixes = c("_22", "_23"))
+bh <- bh[order(bh$host == "All", bh$host), ]
+pct <- function(x) ifelse(is.nan(x), "--", sprintf("%.1f", x))
+extra <- c(extra, table_tex("lrrrrrrrrrrrr",
+  paste("Host & n 2022 & n 2023 & \\%R 2022 & \\%R 2023 & \\%NS 2022 & \\%NS 2023 & Infantis n 2022 & Infantis n 2023 &",
+        "Infantis \\%NS 2022 & Infantis \\%NS 2023 & Other \\%NS 2022 & Other \\%NS 2023 \\\\"),
+  sprintf("%s & %s & %s & %s & %s & %s & %s & %d & %d & %s & %s & %s & %s \\\\", bh$host, format(bh$n_22, big.mark = ","),
+          format(bh$n_23, big.mark = ","), pct(bh$reported_r_22), pct(bh$reported_r_23), pct(bh$ns_22), pct(bh$ns_23),
+          bh$infantis_n_22, bh$infantis_n_23, pct(bh$infantis_ns_22), pct(bh$infantis_ns_23), pct(bh$other_ns_22), pct(bh$other_ns_23)),
+  paste("Cecal \\textit{Salmonella} ciprofloxacin by host, 2022 and 2023. \\%R: share called resistant in the NARMS",
+        "interpretation field; \\%NS: share non-susceptible (MIC of 0.12~mg/L or more) under CLSI 2023, for all",
+        "isolates of the host, for serotype Infantis and for the other serotypes. Pooling the hosts (last row) mixes",
+        "the change within each host with the change in the hosts sampled.")))
 writeLines(extra, "results/supplement_extra.tex")
 
 # Numbers quoted in the paper that no table above holds
@@ -796,7 +813,7 @@ share_at <- function(x, at_most = NULL, at_least = NULL) {
 sal <- ns[ns$year == 2022, ]
 retail_gen <- long[long$source == "retail" & long$ab == "GEN" & long$year %in% 2019:2021 & long$mic %in% c("4", "8"), ]
 state_ratio <- (est$shift_high_state - est$shift_low_state) / (est$shift_high - est$shift_low)
-zero <- function(x) sum(!is.na(x$real) & abs(x$artefact) < 5e-4)
+zero <- function(x) sum(!is.na(x$fixed) & abs(x$reclass) < 5e-4)
 numbers <- c(
   sample_records = nrow(records), no_growth_records = sum(!records$growth %in% "YES"), isolates = nrow(raw),
   isolates_with_mic = sum(has_mic), isolates_with_mic_cecal = sum(has_mic & raw$source == "cecal"),
@@ -813,28 +830,37 @@ numbers <- c(
   sal_cip_infantis_share_2023 = 100 * mean(ns$serotype[ns$year == 2023] == "Infantis"),
   sal_cip_infantis_ns_2022 = 100 * mean(sal$hit[sal$serotype == "Infantis"]),
   sal_cip_infantis_ns_2023 = 100 * mean(ns$hit[ns$year == 2023 & ns$serotype == "Infantis"]),
-  retail_gen_2019_2021_mic4_called_i = mean(retail_gen$narms[retail_gen$mic == "4"] %in% "I"),
+  # File, organism, drug and MIC values that NARMS called differently in different years
+  mic_values_with_two_calls = with(long[!is.na(long$narms), ],
+                                   sum(tapply(narms, paste(source, mo, ab, mic), function(s) length(unique(s))) > 1)),
+  mic_values_with_two_calls_cip = with(long[!is.na(long$narms) & long$ab == "CIP", ],
+                                       sum(tapply(narms, paste(source, mo, ab, mic), function(s) length(unique(s))) > 1)),
+  sal_cip_infantis_chicken_ns_2022 =by_host$infantis_ns[by_host$host == "Chickens" & by_host$year == 2022],
+  sal_cip_infantis_chicken_ns_2023 = by_host$infantis_ns[by_host$host == "Chickens" & by_host$year == 2023],
+  sal_cip_infantis_chicken_share_2022 = 100 * with(by_host, infantis_n[host == "Chickens" & year == 2022] / infantis_n[host == "All" & year == 2022]),
+  sal_cip_infantis_chicken_share_2023 = 100 * with(by_host, infantis_n[host == "Chickens" & year == 2023] / infantis_n[host == "All" & year == 2023]),
+  retail_gen_2019_2021_mic4_called_i =mean(retail_gen$narms[retail_gen$mic == "4"] %in% "I"),
   retail_gen_2019_2021_mic8_called_r = mean(retail_gen$narms[retail_gen$mic == "8"] %in% "R"),
   state_ci_ratio_median = stats::median(state_ratio, na.rm = TRUE),
   state_ci_ratio_min = min(state_ratio, na.rm = TRUE), state_ci_ratio_max = max(state_ratio, na.rm = TRUE),
-  month_ratio_period_median = stats::median(clustering$ratio_real, na.rm = TRUE),
-  month_ratio_period_min = min(clustering$ratio_real, na.rm = TRUE), month_ratio_period_max = max(clustering$ratio_real, na.rm = TRUE),
-  month_ratio_guideline_median = stats::median(clustering$ratio_artefact, na.rm = TRUE),
-  month_ratio_guideline_min = min(clustering$ratio_artefact, na.rm = TRUE),
-  month_ratio_guideline_max = max(clustering$ratio_artefact, na.rm = TRUE),
-  period_excl0_isolates = sum(excl0(clustering$real_low, clustering$real_high)),
-  period_excl0_months = sum(excl0(clustering$real_low_month, clustering$real_high_month)),
-  period_excl0_lost = sum(excl0(clustering$real_low, clustering$real_high) & !excl0(clustering$real_low_month, clustering$real_high_month)),
-  period_excl0_gained = sum(!excl0(clustering$real_low, clustering$real_high) & excl0(clustering$real_low_month, clustering$real_high_month)),
-  guideline_excl0_isolates = sum(excl0(clustering$artefact_low, clustering$artefact_high)),
-  guideline_excl0_months = sum(excl0(clustering$artefact_low_month, clustering$artefact_high_month)),
-  pairs_interpretable_s1 = sum(!is.na(relabel$real)), pairs_zero_guideline_s1 = zero(relabel),
-  pairs_interpretable_s2 = sum(!is.na(relabel_ns$real)), pairs_zero_guideline_s2 = zero(relabel_ns),
-  pairs_interpretable_s3 = sum(!is.na(editions$real)), pairs_zero_guideline_s3 = zero(editions),
-  pairs_same_isolates_both_guidelines = sum(with(rbind(relabel[c("n_y1g1", "n_y1g2", "n_y2g1", "n_y2g2", "real")],
-                                                         relabel_ns[c("n_y1g1", "n_y1g2", "n_y2g1", "n_y2g2", "real")],
-                                                         editions[c("n_y1g1", "n_y1g2", "n_y2g1", "n_y2g2", "real")]),
-                                                   !is.na(real) & n_y1g1 == n_y1g2 & n_y2g1 == n_y2g2)),
+  month_ratio_fixed_median = stats::median(clustering$ratio_fixed, na.rm = TRUE),
+  month_ratio_fixed_min = min(clustering$ratio_fixed, na.rm = TRUE), month_ratio_fixed_max = max(clustering$ratio_fixed, na.rm = TRUE),
+  month_ratio_reclass_median = stats::median(clustering$ratio_reclass, na.rm = TRUE),
+  month_ratio_reclass_min = min(clustering$ratio_reclass, na.rm = TRUE),
+  month_ratio_reclass_max = max(clustering$ratio_reclass, na.rm = TRUE),
+  fixed_excl0_isolates = sum(excl0(clustering$fixed_low, clustering$fixed_high)),
+  fixed_excl0_months = sum(excl0(clustering$fixed_low_month, clustering$fixed_high_month)),
+  fixed_excl0_lost = sum(excl0(clustering$fixed_low, clustering$fixed_high) & !excl0(clustering$fixed_low_month, clustering$fixed_high_month)),
+  fixed_excl0_gained = sum(!excl0(clustering$fixed_low, clustering$fixed_high) & excl0(clustering$fixed_low_month, clustering$fixed_high_month)),
+  reclass_excl0_isolates = sum(excl0(clustering$reclass_low, clustering$reclass_high)),
+  reclass_excl0_months = sum(excl0(clustering$reclass_low_month, clustering$reclass_high_month)),
+  pairs_interpretable_s1 = sum(!is.na(relabel$fixed)), pairs_zero_reclass_s1 = zero(relabel),
+  pairs_interpretable_s2 = sum(!is.na(relabel_ns$fixed)), pairs_zero_reclass_s2 = zero(relabel_ns),
+  pairs_interpretable_s3 = sum(!is.na(editions$fixed)), pairs_zero_reclass_s3 = zero(editions),
+  pairs_same_isolates_both_guidelines = sum(with(rbind(relabel[c("n_y1g1", "n_y1g2", "n_y2g1", "n_y2g2", "fixed")],
+                                                         relabel_ns[c("n_y1g1", "n_y1g2", "n_y2g1", "n_y2g2", "fixed")],
+                                                         editions[c("n_y1g1", "n_y1g2", "n_y2g1", "n_y2g2", "fixed")]),
+                                                   !is.na(fixed) & n_y1g1 == n_y1g2 & n_y2g1 == n_y2g2)),
   retail_unread_calls_2020_2021 = sum(agreement$calls[agreement$source == "retail"] - agreement$tests[agreement$source == "retail"]),
   cecal_unread_calls_2023 = sum(agreement$calls[agreement$source == "cecal" & agreement$year == 2023] -
                                 agreement$tests[agreement$source == "cecal" & agreement$year == 2023]))
@@ -842,11 +868,11 @@ for (v in verdict_levels) numbers[paste0("verdicts_s1_", gsub(" ", "_", v))] <- 
 for (v in verdict_levels) numbers[paste0("verdicts_s3_", gsub(" ", "_", v))] <- sum(editions$verdict == v)
 write.csv(data.frame(name = names(numbers), value = signif(unname(numbers), 6)), "results/narms_numbers.csv", row.names = FALSE)
 
-message("Cluster sensitivity: median interval ratio (months / isolates), period ",
-        round(stats::median(clustering$ratio_real, na.rm = TRUE), 2), ", guideline ",
-        round(stats::median(clustering$ratio_artefact, na.rm = TRUE), 2), "; period intervals excluding 0: ",
-        sum(excl0(clustering$real_low, clustering$real_high)), " with isolates, ",
-        sum(excl0(clustering$real_low_month, clustering$real_high_month)), " with months; guideline: ",
-        sum(excl0(clustering$artefact_low, clustering$artefact_high)), " and ",
-        sum(excl0(clustering$artefact_low_month, clustering$artefact_high_month)))
+message("Cluster sensitivity: median interval ratio (months / isolates), fixed criteria ",
+        round(stats::median(clustering$ratio_fixed, na.rm = TRUE), 2), ", reclassification ",
+        round(stats::median(clustering$ratio_reclass, na.rm = TRUE), 2), "; fixed-criteria intervals excluding 0: ",
+        sum(excl0(clustering$fixed_low, clustering$fixed_high)), " with isolates, ",
+        sum(excl0(clustering$fixed_low_month, clustering$fixed_high_month)), " with months; reclassification: ",
+        sum(excl0(clustering$reclass_low, clustering$reclass_high)), " and ",
+        sum(excl0(clustering$reclass_low_month, clustering$reclass_high_month)))
 writeLines(capture.output(sessionInfo()), "results/sessionInfo.txt")

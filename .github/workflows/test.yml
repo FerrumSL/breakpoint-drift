@@ -29,7 +29,7 @@ jobs:
         env:
           _R_CHECK_CRAN_INCOMING_REMOTE_: false
 
-      # scripts/simulation.R is not rerun here: it takes about 50 minutes on 16 cores. Each of
+      # scripts/simulation.R is not rerun here: it takes about 2 hours on 16 cores. Each of
       # its cells has its own seed, so a local rerun reproduces results/simulation.csv.
       - name: NCBI, NARMS and WHONET runs must reproduce the committed results
         run: |

@@ -1,6 +1,6 @@
 Package: breakpointdrift
-Title: Separate Breakpoint Revisions and Reporting-Rule Changes from Change Under Fixed Criteria in Antimicrobial Resistance Trends
-Version: 1.1.0
+Title: Separate Breakpoint Revisions and Reporting-Rule Changes from Change at Fixed Criteria in Antimicrobial Resistance Trends
+Version: 1.2.0
 Authors@R: person("Ferrya", email = "114243237+FerrumSL@users.noreply.github.com",
     role = c("aut", "cre"))
 Description: When CLSI or EUCAST revises a clinical breakpoint, or a laboratory
@@ -8,11 +8,11 @@ Description: When CLSI or EUCAST revises a clinical breakpoint, or a laboratory
     concentration (MIC) change category, and the share of resistant isolates in an
     antibiogram moves with no change in the MICs. This package reinterprets raw MICs
     and zone diameters from two periods under both guideline editions with the 'AMR'
-    package, splits each organism and drug's change in percent resistant into a
-    period component (the change with the guideline held fixed) and a guideline
-    component, gives both bootstrap intervals and tests, estimates the shift in the
-    MIC distribution from an interval-censored model that uses no breakpoint, and
-    writes a report for a stewardship committee.
+    package, splits each organism and drug's change in percent resistant into
+    reclassification (the part due to reading the periods with different criteria)
+    and the change at fixed criteria, gives both bootstrap intervals and tests,
+    estimates the shift in the MIC distribution from an interval-censored model that
+    uses no breakpoint, and writes a report for a stewardship committee.
 License: GPL-2
 URL: https://github.com/FerrumSL/breakpoint-drift
 BugReports: https://github.com/FerrumSL/breakpoint-drift/issues

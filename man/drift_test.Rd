@@ -15,28 +15,29 @@ drift_test(x, alpha = 0.05, min_effect = 0.01)
 verdict counts. 0 counts any significant component.}
 }
 \value{
-\code{x} with \code{p_observed}, \code{p_real} (period component), \code{p_artefact} (guideline
-component), \code{p_larger}, Clopper-Pearson 95\% intervals for both years under the newer
+\code{x} with \code{p_observed}, \code{p_fixed} (change at fixed criteria), \code{p_reclass}
+(reclassification), \code{p_larger}, Clopper-Pearson 95\% intervals for both years under the newer
 guideline (\verb{ci_low_*}, \verb{ci_high_*}), \code{larger}, \code{verdict} and \code{verdict_note}.
 }
 \description{
-Tests the observed change, the period component and the guideline component of each pair, and
-which of the two components is larger, each with a Benjamini-Hochberg correction across the
-interpretable pairs. The observed change gets Fisher's exact test (each period under its own
-guideline or as reported, what a naive antibiogram shows). The two components, and the
-difference |guideline| - |period|, get the bootstrap tests of \code{\link[=drift_bootstrap]{drift_bootstrap()}}, so each test
-is of the quantity reported.
+Tests the observed change, the change at fixed criteria and reclassification of each pair, and
+which of the two is larger, each with a Benjamini-Hochberg correction across the interpretable
+pairs. The observed change gets Fisher's exact test (each period under its own guideline or as
+reported, what a naive antibiogram shows). The two components, and the difference
+|reclass| - |fixed|, get the bootstrap tests of \code{\link[=drift_bootstrap]{drift_bootstrap()}}, so each test is of the
+quantity reported.
 }
 \details{
-A component is shown when its corrected p-value is below \code{alpha} and its size is at least
-\code{min_effect}. Verdicts: "not interpretable" if the period component cannot be estimated, or if
-capped values straddling one guideline's boundary leave a component unknown over a range of
-\code{min_effect} or more (see \code{\link[=drift_decompose]{drift_decompose()}}); "both" if both components are shown;
-"guideline change" or "period change" if only that one is; "unresolved" if neither is but the
-observed change is and both components are non-zero (it is real, but neither component can be
-shown to drive it); otherwise "noise", which means no evidence of change, not evidence of none.
-Column \code{larger} says which component is larger, "guideline" or "period", when the test of
-|guideline| - |period| is significant and that component is shown, and "neither" otherwise.
-Neither label depends on which component is tested first, and a large sample does not turn a
-small component into the label. Column \code{verdict_note} gives the reason for "not interpretable".
+A component is detected when its corrected p-value is below \code{alpha} and its size is at least
+\code{min_effect}. Verdicts: "not interpretable" if the change at fixed criteria cannot be
+estimated, or if capped values straddling one guideline's boundary leave a component unknown
+over a range of \code{min_effect} or more (see \code{\link[=drift_decompose]{drift_decompose()}}); "both" if both components are
+detected; "reclassification" or "change at fixed criteria" if only that one is; "unattributed" if
+neither is but the observed change is and both components are non-zero (the change is there,
+but neither component can be shown to drive it); otherwise "no change detected", which means no
+evidence of change, not evidence of none. Column \code{larger} says which component is larger,
+"reclassification" or "fixed criteria", when the test of |reclass| - |fixed| is significant and
+that component is detected, and "neither" otherwise. Neither label depends on which component is
+tested first, and a large sample does not turn a small component into the label. Column
+\code{verdict_note} gives the reason for "not interpretable".
 }

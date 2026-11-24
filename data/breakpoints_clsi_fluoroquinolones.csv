@@ -1,0 +1,11 @@
+guideline,mo,ab,breakpoint_S,breakpoint_R,ref_tbl,note
+CLSI 2014,Enterobacterales,CIP,1,4,Table 2A,"M100-S24; Enterobacteriaceae except Salmonella; unchanged until M100 29th ed. (2019)"
+CLSI 2015,Enterobacterales,CIP,1,4,Table 2A,"M100-S25; Enterobacteriaceae except Salmonella; unchanged until M100 29th ed. (2019)"
+CLSI 2016,Enterobacterales,CIP,1,4,Table 2A,"M100 26th ed.; Enterobacteriaceae except Salmonella; unchanged until M100 29th ed. (2019)"
+CLSI 2017,Enterobacterales,CIP,1,4,Table 2A,"M100 27th ed.; Enterobacteriaceae except Salmonella; unchanged until M100 29th ed. (2019)"
+CLSI 2018,Enterobacterales,CIP,1,4,Table 2A,"M100 28th ed.; Enterobacteriaceae except Salmonella; revised in M100 29th ed. (2019) to S <= 0.25, R >= 1"
+CLSI 2014,Enterobacterales,LVX,2,8,Table 2A,"M100-S24; Enterobacteriaceae except Salmonella; unchanged until M100 29th ed. (2019)"
+CLSI 2015,Enterobacterales,LVX,2,8,Table 2A,"M100-S25; Enterobacteriaceae except Salmonella; unchanged until M100 29th ed. (2019)"
+CLSI 2016,Enterobacterales,LVX,2,8,Table 2A,"M100 26th ed.; Enterobacteriaceae except Salmonella; unchanged until M100 29th ed. (2019)"
+CLSI 2017,Enterobacterales,LVX,2,8,Table 2A,"M100 27th ed.; Enterobacteriaceae except Salmonella; unchanged until M100 29th ed. (2019)"
+CLSI 2018,Enterobacterales,LVX,2,8,Table 2A,"M100 28th ed.; Enterobacteriaceae except Salmonella; revised in M100 29th ed. (2019) to S <= 0.5, R >= 2"
