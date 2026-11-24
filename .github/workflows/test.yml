@@ -21,7 +21,7 @@ jobs:
 
       - uses: r-lib/actions/setup-renv@v2
 
-      - name: R CMD check (includes the tests with a known injected artefact)
+      - name: R CMD check (includes the tests with a known injected reclassification)
         run: |
           R CMD build .
           R CMD check --no-manual --as-cran breakpointdrift_*.tar.gz
